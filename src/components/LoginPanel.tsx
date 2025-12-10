@@ -305,12 +305,11 @@ const LoginPanel: React.FC<LoginPanelProps> = ({ onSuccess }) => {
            transform: transform || 'perspective(1000px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)',
            transition: 'transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
         }}
-        className="relative rounded-[32px] bg-[#0F1629]/70 backdrop-blur-xl border border-white/10 shadow-[0_30px_60px_rgba(0,0,0,0.6)] overflow-hidden"
+        // Updated transparency for better background visibility
+        className="relative rounded-[32px] bg-[#0F1629]/50 backdrop-blur-2xl border border-white/10 shadow-[0_30px_60px_rgba(0,0,0,0.6)] overflow-hidden"
       >
-        {/* Decorative Gradients */}
-        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 via-purple-500 to-indigo-500 opacity-80" />
-        <div className="absolute -top-24 -left-24 w-64 h-64 bg-blue-600/10 rounded-full blur-[80px]" />
-        <div className="absolute -bottom-24 -right-24 w-64 h-64 bg-purple-600/10 rounded-full blur-[80px]" />
+        {/* Decorative Gradients - Subtle internal glow */}
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500/50 via-purple-500/50 to-indigo-500/50 opacity-80" />
 
         {/* --- MAIN CONTENT AREA --- */}
         <div className="relative z-10 p-8 pt-10">
