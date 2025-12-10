@@ -15,7 +15,11 @@ import {
   CalendarDays,
   ShieldCheck,
   Megaphone,
-  BellRing
+  BellRing,
+  X,
+  Clock,
+  AlertTriangle,
+  Info
 } from 'lucide-react';
 import { dataService } from '../services/dataService';
 import { Module, DashboardStats, Profile, Announcement } from '../../types';
@@ -44,6 +48,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, profile, announcements, onP
   const [stats, setStats] = useState<DashboardStats>({ aiCalls: 0, moduleClicks: 0 });
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [selectedAnnouncement, setSelectedAnnouncement] = useState<Announcement | null>(null); // Modal State
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -66,7 +71,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, profile, announcements, onP
   };
 
   const handleModuleClick = async (module: Module) => {
-    // 1. Log Activity
     await dataService.logActivity(
       user.id, 
       'module_access', 
@@ -74,10 +78,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, profile, announcements, onP
       { path: module.path, title: module.title }
     );
     setStats(prev => ({ ...prev, moduleClicks: prev.moduleClicks + 1 }));
-
-    // 2. Navigate
-    // Note: In a real app with React Router, we would use navigate(module.path)
-    // Here we use simple state-based navigation
     onNavigate(module.key);
   };
 
@@ -103,7 +103,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, profile, announcements, onP
     }
   };
 
-  // Get greeting based on time
   const getGreeting = () => {
     const hour = new Date().getHours();
     if (hour < 12) return '上午好';
@@ -117,7 +116,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, profile, announcements, onP
       {/* 1. Header Section */}
       <div className="mb-6 flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-white mb-2 tracking-tight">
+          <h1 className="text-3xl font-bold text-white mb-2 tracking-tight drop-shadow-md">
             {getGreeting()}，
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-300 to-white">
               {profile?.full_name || '新用户'}
@@ -131,10 +130,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user, profile, announcements, onP
 
       {/* 2. Announcement Banner (Top Placement) */}
       {announcements.length > 0 && (
-        <div className="mb-8 relative group overflow-hidden rounded-2xl bg-gradient-to-r from-blue-900/40 to-[#0F1629]/60 border border-blue-500/20 backdrop-blur-md">
-           <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
+        <div 
+          onClick={() => setSelectedAnnouncement(announcements[0])}
+          className="mb-8 relative group overflow-hidden rounded-2xl bg-[#0F1629]/80 border border-blue-500/20 hover:border-blue-500/50 backdrop-blur-md shadow-lg cursor-pointer transition-all active:scale-[0.99]"
+        >
+           <div className="absolute top-0 left-0 w-1 h-full bg-blue-500 group-hover:bg-blue-400 transition-colors"></div>
            <div className="p-4 flex items-start sm:items-center gap-4">
-              <div className="shrink-0 w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center animate-pulse-slow">
+              <div className="shrink-0 w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center animate-pulse-slow group-hover:bg-blue-500/30 transition-colors">
                 <Megaphone className="w-5 h-5 text-blue-300" />
               </div>
               <div className="flex-1 min-w-0">
@@ -145,21 +147,21 @@ const Dashboard: React.FC<DashboardProps> = ({ user, profile, announcements, onP
                     <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
                   </span>
                 </h3>
-                <p className="text-xs sm:text-sm text-blue-200/80 truncate">
+                <p className="text-xs sm:text-sm text-blue-200/80 truncate group-hover:text-blue-100 transition-colors">
                   {announcements[0].content}
                 </p>
               </div>
-              <button className="hidden sm:flex text-xs font-medium px-3 py-1.5 rounded-lg bg-blue-500/10 text-blue-300 hover:bg-blue-500/20 transition-colors">
+              <button className="hidden sm:flex text-xs font-medium px-3 py-1.5 rounded-lg bg-blue-500/10 text-blue-300 group-hover:bg-blue-500/20 transition-colors">
                 查看详情
               </button>
            </div>
         </div>
       )}
 
-      {/* 3. Main Grid Layout (2 Columns: 2/3 Main, 1/3 Side) */}
+      {/* 3. Main Grid Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
-        {/* LEFT COLUMN: Main Modules (Scalable Grid) */}
+        {/* LEFT COLUMN: Main Modules */}
         <div className="lg:col-span-2 space-y-6">
           <div className="flex items-center justify-between px-1">
              <div className="flex items-center gap-2">
@@ -168,7 +170,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, profile, announcements, onP
              </div>
           </div>
 
-          {/* Module Grid: Changed to grid-cols-2 for smaller, card-like items */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             {loading ? (
               <>
@@ -180,14 +181,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user, profile, announcements, onP
                 <div 
                   key={module.id}
                   onClick={() => handleModuleClick(module)}
-                  className="group relative overflow-hidden rounded-[24px] bg-[#0F1629]/60 border border-white/5 hover:bg-[#1E293B]/80 transition-all duration-300 cursor-pointer hover:shadow-2xl hover:border-white/10 hover:-translate-y-1"
+                  className="group relative overflow-hidden rounded-[24px] bg-[#0F1629]/80 border border-white/5 hover:bg-[#1E293B] transition-all duration-300 cursor-pointer hover:shadow-2xl hover:border-white/20 hover:-translate-y-1"
                 >
-                  {/* Subtle Top Light */}
                   <div className="absolute top-0 inset-x-0 h-[1px] bg-gradient-to-r from-transparent via-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
 
                   <div className="relative p-6 flex flex-col h-full">
-                    
-                    {/* Header: Icon + Arrow */}
                     <div className="flex justify-between items-start mb-4">
                       <div className={`
                         w-12 h-12 rounded-xl flex items-center justify-center shrink-0 shadow-lg border border-white/5 group-hover:scale-110 transition-transform duration-300
@@ -202,7 +200,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, profile, announcements, onP
                       </div>
                     </div>
 
-                    {/* Content */}
                     <div className="mt-auto">
                       <h3 className="text-lg font-bold text-white mb-2 group-hover:text-blue-100 transition-colors">
                         {module.title}
@@ -216,9 +213,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, profile, announcements, onP
               ))
             )}
             
-            {/* Add 'Coming Soon' placeholder if few modules */}
             {!loading && modules.length < 4 && (
-               <div className="rounded-[24px] border border-dashed border-white/10 bg-transparent p-6 flex flex-col items-center justify-center text-center group hover:border-white/20 transition-colors min-h-[180px]">
+               <div className="rounded-[24px] border border-dashed border-white/10 bg-[#0F1629]/40 p-6 flex flex-col items-center justify-center text-center group hover:border-white/20 transition-colors min-h-[180px]">
                   <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
                     <span className="text-xl text-slate-500 group-hover:text-white">+</span>
                   </div>
@@ -230,9 +226,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, profile, announcements, onP
 
         {/* RIGHT COLUMN: Profile & Stats */}
         <div className="space-y-6">
-          
-          {/* Profile Card */}
-          <div className="relative overflow-hidden rounded-[24px] bg-[#0F1629]/80 border border-white/5 p-6 md:p-8">
+          <div className="relative overflow-hidden rounded-[24px] bg-[#0F1629]/90 border border-white/5 p-6 md:p-8 backdrop-blur-xl">
             <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 blur-[50px] rounded-full pointer-events-none" />
             
             <div className="relative z-10 flex flex-col items-center text-center">
@@ -244,7 +238,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, profile, announcements, onP
                 onChange={handleFileChange}
               />
               
-              {/* Avatar */}
               <div 
                 onClick={handleAvatarClick}
                 className="relative w-24 h-24 mb-4 rounded-full p-1 bg-gradient-to-b from-white/20 to-transparent cursor-pointer group"
@@ -257,7 +250,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, profile, announcements, onP
                       <UserIcon className="w-8 h-8 text-slate-500" />
                     </div>
                   )}
-                  {/* Upload Overlay */}
                   <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-sm">
                     <Camera className="w-6 h-6 text-white" />
                   </div>
@@ -285,8 +277,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, profile, announcements, onP
             </div>
           </div>
 
-          {/* Combined Stats Card */}
-          <div className="rounded-[24px] bg-[#0F1629]/60 border border-white/5 p-6 flex flex-col gap-6">
+          <div className="rounded-[24px] bg-[#0F1629]/90 border border-white/5 p-6 flex flex-col gap-6 backdrop-blur-xl">
             <div className="flex items-center justify-between">
               <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
                 <BarChart3 className="w-4 h-4" />
@@ -295,7 +286,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, profile, announcements, onP
               <BellRing className="w-4 h-4 text-slate-600 hover:text-white cursor-pointer transition-colors" />
             </div>
 
-            {/* AI Stat */}
             <div className="group">
               <div className="flex justify-between items-end mb-2">
                 <span className="text-sm text-slate-400 group-hover:text-blue-300 transition-colors">AI 调用量</span>
@@ -309,7 +299,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, profile, announcements, onP
               </div>
             </div>
 
-            {/* Clicks Stat */}
             <div className="group">
               <div className="flex justify-between items-end mb-2">
                 <span className="text-sm text-slate-400 group-hover:text-purple-300 transition-colors">模块活跃度</span>
@@ -331,9 +320,76 @@ const Dashboard: React.FC<DashboardProps> = ({ user, profile, announcements, onP
                <span className="text-emerald-400"> +12.5% 增长</span>
             </div>
           </div>
-
         </div>
       </div>
+
+      {/* --- ANNOUNCEMENT MODAL --- */}
+      {selectedAnnouncement && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div 
+            className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm transition-opacity"
+            onClick={() => setSelectedAnnouncement(null)}
+          />
+          <div className="relative w-full max-w-lg bg-[#0F1629] border border-blue-500/30 rounded-2xl shadow-[0_0_50px_rgba(37,99,235,0.2)] overflow-hidden animate-in zoom-in-95 duration-200">
+            {/* Modal Header with Gradient */}
+            <div className="relative p-6 border-b border-white/5 bg-gradient-to-r from-blue-500/10 to-transparent">
+               <div className="flex justify-between items-start">
+                  <div className="flex items-center gap-3">
+                     <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
+                        <Megaphone className="w-5 h-5 text-blue-400" />
+                     </div>
+                     <div>
+                       <h3 className="text-lg font-bold text-white">系统公告</h3>
+                       <p className="text-xs text-blue-300/70">Langsu AI System Notification</p>
+                     </div>
+                  </div>
+                  <button 
+                    onClick={() => setSelectedAnnouncement(null)}
+                    className="p-1.5 rounded-full hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
+                  >
+                    <X size={20} />
+                  </button>
+               </div>
+            </div>
+
+            {/* Content */}
+            <div className="p-6">
+               <div className="flex items-center gap-3 mb-4">
+                  <span className={`px-2.5 py-1 rounded-md text-xs font-medium border ${
+                    selectedAnnouncement.priority === 'high' 
+                      ? 'bg-red-500/10 border-red-500/20 text-red-400' 
+                      : 'bg-blue-500/10 border-blue-500/20 text-blue-400'
+                  }`}>
+                    {selectedAnnouncement.priority === 'high' ? '重要紧急' : '普通消息'}
+                  </span>
+                  <span className="flex items-center gap-1.5 text-xs text-slate-500">
+                     <Clock size={12} />
+                     {new Date(selectedAnnouncement.created_at).toLocaleDateString()}
+                  </span>
+               </div>
+               
+               <h4 className="text-xl font-bold text-white mb-4 leading-snug">
+                 {selectedAnnouncement.title}
+               </h4>
+               
+               <div className="p-4 rounded-xl bg-slate-900/50 border border-white/5 text-slate-300 text-sm leading-relaxed whitespace-pre-wrap">
+                 {selectedAnnouncement.content}
+               </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-white/5 bg-slate-900/50 flex justify-end">
+               <button 
+                 onClick={() => setSelectedAnnouncement(null)}
+                 className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-sm text-white font-medium transition-colors"
+               >
+                 我知道了
+               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };
