@@ -1,0 +1,12 @@
+{
+  "rewrites": [
+    {
+      "source": "/aliyun-api/:path*",
+      "destination": "https://dashscope.aliyuncs.com/:path*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}

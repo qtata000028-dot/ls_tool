@@ -1,3 +1,4 @@
+
 import { supabase } from './supabaseClient';
 import { dataService } from './dataService';
 
@@ -53,10 +54,14 @@ class AliyunService {
 
   /**
    * 调用阿里云百炼应用 API (流式 - 文本)
+   * 使用 /aliyun-api 前缀，由 Vercel 或 Vite 代理转发
    */
   async chatStream(messages: ChatMessage[], onChunk: (text: string) => void) {
     const config = await this.getConfig();
-    const url = `https://dashscope.aliyuncs.com/api/v1/apps/${config.appId}/completion`;
+    // 原始地址: https://dashscope.aliyuncs.com/api/v1/apps/...
+    // 代理地址: /aliyun-api/api/v1/apps/...
+    const url = `/aliyun-api/api/v1/apps/${config.appId}/completion`;
+    
     const prompt = messages[messages.length - 1].content;
 
     this.logUsage('aliyun-rag-bailian');
@@ -76,7 +81,7 @@ class AliyunService {
         }),
       });
 
-      if (!response.ok) this.handleError(response);
+      if (!response.ok) await this.handleError(response);
       if (!response.body) throw new Error("No response body");
 
       await this.processStream(response.body, (json) => {
@@ -93,13 +98,18 @@ class AliyunService {
 
   /**
    * 调用通义千问 Qwen-VL 视觉模型 (流式 - 多模态)
+   * 使用 /aliyun-api 前缀，由 Vercel 或 Vite 代理转发
    */
   async chatVLStream(messages: VLMessage[], onChunk: (text: string) => void) {
     const config = await this.getConfig();
-    // Qwen-VL endpoint
-    const url = `https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation`;
     
+    // 原始地址: https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation
+    // 代理地址: /aliyun-api/api/v1/services/aigc/multimodal-generation/generation
+    const url = `/aliyun-api/api/v1/services/aigc/multimodal-generation/generation`;
+
     this.logUsage('qwen-vl-max');
+
+    console.log("Calling Aliyun VL API via Vercel Proxy...");
 
     try {
       const response = await fetch(url, {
@@ -119,7 +129,9 @@ class AliyunService {
         }),
       });
 
-      if (!response.ok) await this.handleError(response);
+      if (!response.ok) {
+        await this.handleError(response);
+      }
       if (!response.body) throw new Error("No response body");
 
       await this.processStream(response.body, (json) => {
@@ -129,7 +141,7 @@ class AliyunService {
       });
 
     } catch (error) {
-      console.error("Aliyun VL Error:", error);
+      console.error("Aliyun VL Error Details:", error);
       throw error;
     }
   }
@@ -137,13 +149,21 @@ class AliyunService {
   // --- Helper Methods ---
 
   private async handleError(response: Response) {
-    const errorText = await response.text();
-    try {
-        const errJson = JSON.parse(errorText);
-        throw new Error(`API 请求失败: ${errJson.message || errJson.code || response.status}`);
-    } catch (e) {
-        throw new Error(`API 请求失败 (${response.status}): ${errorText}`);
+    let errorMessage = `API 请求失败 (${response.status})`;
+    
+    if (response.status === 504) {
+      throw new Error("请求超时：服务器响应时间过长 (504)。图片可能太大，或 AI 正在深度思考。");
     }
+
+    try {
+      const errorText = await response.text();
+      console.error("API Error Response Body:", errorText);
+      const errJson = JSON.parse(errorText);
+      errorMessage = errJson.message || errJson.code || response.statusText;
+    } catch (e) {
+      // Ignore json parse error
+    }
+    throw new Error(errorMessage);
   }
 
   private async processStream(body: ReadableStream<Uint8Array>, callback: (json: any) => void) {
@@ -159,7 +179,11 @@ class AliyunService {
         buffer += chunk;
         
         const lines = buffer.split("\n");
-        buffer = lines.pop() || ""; 
+        if (buffer.endsWith("\n")) {
+            buffer = "";
+        } else {
+            buffer = lines.pop() || ""; 
+        }
 
         for (const line of lines) {
           if (line.startsWith("data:")) {
@@ -167,9 +191,16 @@ class AliyunService {
              if (dataStr === "" || dataStr === "[DONE]") continue;
              try {
                const json = JSON.parse(dataStr);
+               if (json.code && json.message) {
+                 throw new Error(json.message);
+               }
                callback(json);
              } catch (e) {
-               console.warn("Parse error", e);
+                if (e instanceof Error && e.message.includes('Unexpected')) {
+                    // Ignore parse error for partial json
+                } else {
+                    throw e;
+                }
              }
           }
         }
