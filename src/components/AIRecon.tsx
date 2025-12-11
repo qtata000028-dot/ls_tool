@@ -1,6 +1,5 @@
-
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowLeft, Upload, Mic, ScanLine, X, Loader2, Play, Pause, AlertTriangle, Sparkles, ChevronUp, ChevronDown, StopCircle } from 'lucide-react';
+import { ArrowLeft, Upload, Mic, ScanLine, X, Loader2, Play, Pause, AlertTriangle, Sparkles, ChevronUp, ChevronDown, StopCircle, Send } from 'lucide-react';
 import { aliyunService, VLMessage } from '../services/aliyunService';
 import { dataService } from '../services/dataService';
 
@@ -9,12 +8,20 @@ interface AIReconProps {
 }
 
 const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
-  // State
+  // --- Device Detection ---
+  const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 768);
+
+  useEffect(() => {
+    const handleResize = () => setIsDesktop(window.innerWidth >= 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // --- State ---
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [analysisText, setAnalysisText] = useState('');
   
-  // 状态管理
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [statusText, setStatusText] = useState(''); 
   
@@ -39,7 +46,6 @@ const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
     if ('webkitSpeechRecognition' in window) {
       const SpeechRecognition = (window as any).webkitSpeechRecognition;
       const recognition = new SpeechRecognition();
-      // Enable continuous listening
       recognition.continuous = true; 
       recognition.interimResults = true;
       recognition.lang = 'zh-CN';
@@ -49,21 +55,9 @@ const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
         for (let i = event.resultIndex; i < event.results.length; ++i) {
           transcript += event.results[i][0].transcript;
         }
-        // Update input with latest transcript
-        if (transcript) {
-           setPromptInput(transcript);
-        }
+        if (transcript) setPromptInput(transcript);
       };
 
-      recognition.onend = () => {
-        // If it stops but we think we are recording, it might be silence. 
-        // We'll keep the UI state as recording unless explicitly stopped by user logic or error.
-        // However, standard behavior is to restart if continuous.
-        // For simple UI sync, we rely on user clicking stop or hard errors.
-        // If browser forces stop:
-        // setIsRecording(false);
-      };
-      
       recognition.onerror = (event: any) => {
         console.error("Speech recognition error", event.error);
         setIsRecording(false);
@@ -81,16 +75,15 @@ const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
 
   // Auto-expand result panel on mobile when data arrives
   useEffect(() => {
-    if (analysisText || errorMsg) {
+    if ((analysisText || errorMsg) && !isDesktop) {
       setIsResultExpanded(true);
-      // Scroll to bottom
       setTimeout(() => {
         if (resultEndRef.current) {
           resultEndRef.current.scrollIntoView({ behavior: 'smooth' });
         }
       }, 300);
     }
-  }, [analysisText, errorMsg]);
+  }, [analysisText, errorMsg, isDesktop]);
 
   // --- Handlers ---
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -114,15 +107,13 @@ const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
     }
 
     if (isRecording) {
-      // STOP
       recognitionRef.current.stop();
       setIsRecording(false);
     } else {
-      // START
       try {
         recognitionRef.current.start();
         setIsRecording(true);
-        setPromptInput(''); // Clear previous input on new recording session
+        setPromptInput('');
       } catch (e) {
         console.error("Start recording failed", e);
       }
@@ -136,9 +127,8 @@ const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
     setAnalysisText('');
     setErrorMsg(null);
     stopAudio();
-    setIsResultExpanded(true); // Open panel to show loading status
+    if (!isDesktop) setIsResultExpanded(true);
     
-    // Stop recording if active
     if (isRecording) {
        recognitionRef.current?.stop();
        setIsRecording(false);
@@ -175,7 +165,7 @@ const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
            setIsAnalyzing(false);
            setStatusText("");
         }
-      }, 60000); // Increased timeout for Max model
+      }, 60000);
 
       await aliyunService.chatVLStream(messages, (chunk) => {
         if (!hasReceivedFirstToken) {
@@ -243,40 +233,129 @@ const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
     if (abortControllerRef.current) abortControllerRef.current.abort();
   };
 
-  // 结果面板是否显示 (是否有内容或报错)
-  const hasResult = !!(analysisText || errorMsg);
+  // --- Sub-Components for Cleanliness ---
 
+  const ActionBar = ({ className = "" }) => (
+    <div className={`flex flex-col gap-3 ${className}`}>
+        {/* Row 1: Input + Mic */}
+        <div className="flex items-center gap-3 w-full">
+            <div className={`flex-1 flex items-center bg-black/40 rounded-xl border px-3 py-2.5 transition-all duration-300 ${isRecording ? 'border-red-500/80 shadow-[0_0_15px_rgba(239,68,68,0.4)] bg-red-950/20' : 'border-white/10 focus-within:border-indigo-500/50'}`}>
+                <input 
+                type="text" 
+                value={promptInput}
+                onChange={(e) => setPromptInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
+                placeholder={isRecording ? "正在听..." : "输入指令..."}
+                className="flex-1 bg-transparent border-none text-sm text-white placeholder-slate-500 focus:ring-0 px-0 min-w-0"
+                disabled={isAnalyzing}
+                />
+                <button 
+                    onClick={toggleRecording}
+                    className={`p-2 rounded-lg transition-all ml-2 shrink-0 flex items-center justify-center ${
+                        isRecording 
+                        ? 'text-white bg-red-500 animate-pulse' 
+                        : 'text-slate-400 hover:text-white hover:bg-white/10'
+                    }`}
+                >
+                    {isRecording ? <StopCircle size={18} className="fill-current"/> : <Mic size={18} />}
+                </button>
+            </div>
+        </div>
+
+        {/* Row 2: Action Button */}
+        <button 
+            onClick={handleAnalyze}
+            disabled={!uploadedFile || isAnalyzing}
+            className={`flex items-center justify-center gap-2 w-full px-6 py-3 rounded-xl font-bold text-sm transition-all ${
+                !uploadedFile 
+                ? 'bg-slate-800 text-slate-500 cursor-not-allowed' 
+                : isAnalyzing 
+                    ? 'bg-indigo-600/50 text-indigo-200 cursor-wait'
+                    : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-[0_0_20px_rgba(79,70,229,0.4)] hover:shadow-[0_0_30px_rgba(79,70,229,0.6)] active:scale-[0.98]'
+            }`}
+        >
+            {isAnalyzing ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
+            <span>{isAnalyzing ? 'AI 深度分析中...' : '开始识别'}</span>
+        </button>
+    </div>
+  );
+
+  const AnalysisResultContent = () => (
+    <div className="space-y-4">
+        {promptInput && isDesktop && (
+            <div className="p-3 rounded-lg bg-white/5 border border-white/5">
+            <p className="text-xs text-slate-500 mb-1">您的指令</p>
+            <p className="text-sm text-slate-300">"{promptInput}"</p>
+            </div>
+        )}
+        
+        {isAnalyzing && !analysisText && (
+            <div className="flex items-center gap-3 text-sm text-indigo-300 p-4 rounded-xl bg-indigo-500/10 border border-indigo-500/20">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span>{statusText || "AI 正在思考..."}</span>
+            </div>
+        )}
+
+        {errorMsg ? (
+            <div className="flex flex-col items-center justify-center py-10 text-center gap-4 animate-in zoom-in-95">
+                <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center text-red-400">
+                    <AlertTriangle size={24} />
+                </div>
+                <div className="space-y-1">
+                    <p className="text-white font-medium">任务中断</p>
+                    <p className="text-xs text-red-400 px-4 leading-relaxed">{errorMsg}</p>
+                    <button onClick={handleAnalyze} className="mt-4 px-4 py-1.5 text-xs bg-white/10 hover:bg-white/20 rounded-full transition-colors">
+                    重试
+                    </button>
+                </div>
+            </div>
+        ) : (
+            <div className="prose prose-invert prose-sm max-w-none">
+                <p className="text-slate-300 leading-relaxed whitespace-pre-wrap text-base md:text-sm">{analysisText}</p>
+                {isAnalyzing && analysisText && (
+                    <div className="flex gap-1.5 pt-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
+                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse delay-150"></span>
+                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse delay-300"></span>
+                    </div>
+                )}
+            </div>
+        )}
+        <div ref={resultEndRef} />
+    </div>
+  );
+
+  // --- Main Render ---
   return (
-    // 使用 calc(100dvh - X) 确保在移动端地址栏收缩时也能铺满，防止底部按钮被遮挡
     <div className="w-full h-[calc(100dvh-110px)] max-w-[1600px] mx-auto bg-[#020617] border border-white/10 rounded-3xl overflow-hidden shadow-2xl flex flex-col md:flex-row animate-in fade-in zoom-in-95 duration-500 relative">
       
-      {/* 1. LEFT: Immersive Image Area */}
-      <div className="flex-1 relative bg-black flex flex-col items-center justify-center overflow-hidden group">
-         {/* Background Grid */}
+      {/* =======================
+          LEFT PANEL: Image
+         ======================= */}
+      <div className={`flex-1 relative bg-black flex flex-col items-center justify-center overflow-hidden group transition-all ${isDesktop ? 'md:w-auto' : 'w-full'}`}>
+         {/* Grid BG */}
          <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:40px_40px]"></div>
          
          <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
 
+         {/* Image Display */}
          {imagePreview ? (
-           <div className="relative w-full h-full flex items-center justify-center p-4 pb-48 md:pb-24">
+           <div className="relative w-full h-full flex items-center justify-center p-4">
               <img src={imagePreview} className="max-w-full max-h-full object-contain z-10 shadow-[0_0_50px_rgba(0,0,0,0.8)]" alt="Preview" />
               
-              <div 
-                 className="absolute inset-0 bg-center bg-cover blur-3xl opacity-30 pointer-events-none"
-                 style={{ backgroundImage: `url(${imagePreview})` }}
-              ></div>
-
+              {/* Scan Effect Overlay */}
               {isAnalyzing && (
                  <div className="absolute inset-0 z-20 pointer-events-none overflow-hidden">
                     <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-b from-transparent via-indigo-500/10 to-transparent animate-[scan_2s_linear_infinite]"></div>
                     <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] h-[90%] border border-indigo-500/30 rounded-lg">
-                         <div className="absolute top-4 left-4 text-xs font-mono text-indigo-300 animate-pulse">
+                         <div className="absolute top-4 left-4 text-xs font-mono text-indigo-300 animate-pulse bg-black/50 px-2 py-1 rounded">
                             {statusText || "PROCESSING..."}
                          </div>
                     </div>
                  </div>
               )}
 
+              {/* Close Button */}
               <button 
                  onClick={clearAll}
                  className="absolute top-6 left-6 z-30 p-2 bg-black/50 text-white/70 hover:text-white hover:bg-red-500/80 rounded-full backdrop-blur-md transition-all"
@@ -298,174 +377,107 @@ const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
               </div>
            </div>
          )}
+         
+         {/* Desktop Back Button (Floating on Image) */}
+         {isDesktop && (
+            <button onClick={onBack} className="absolute top-6 left-6 p-2 text-slate-400 hover:text-white bg-black/30 rounded-lg backdrop-blur-md">
+                <ArrowLeft size={20} />
+            </button>
+         )}
+
+         {/* MOBILE ONLY: Floating Action Bar at Bottom of Image Panel */}
+         {!isDesktop && (
+            <div className={`absolute left-0 right-0 z-50 px-4 transition-all duration-300 ${isResultExpanded ? 'bottom-4 opacity-0 pointer-events-none' : 'bottom-6 opacity-100'}`}>
+                <div className="bg-[#0F1629]/90 backdrop-blur-xl p-4 rounded-2xl border border-white/10 shadow-2xl">
+                    <div className="flex items-center gap-3 mb-3">
+                        <button onClick={onBack} className="p-2 text-slate-400"><ArrowLeft size={20}/></button>
+                        <div className="h-4 w-[1px] bg-white/10"></div>
+                        <span className="text-sm font-bold text-white">AI 视觉分析</span>
+                    </div>
+                    <ActionBar />
+                </div>
+            </div>
+         )}
       </div>
 
-      {/* 2. FLOATING ACTION BAR (Mobile Optimized - 2 Rows) */}
-      <div 
-        className={`
-          absolute z-50 transition-all duration-500 ease-in-out px-4
-          
-          /* Mobile: Smart Positioning */
-          left-0 right-0 
-          ${isResultExpanded ? 'bottom-4' : 'bottom-[80px]'}
-
-          /* Desktop: Smart positioning */
-          md:bottom-8 md:left-auto md:right-auto md:w-[600px] md:px-0
-          ${hasResult 
-             ? 'md:left-[calc(50%-200px)] md:-translate-x-1/2' 
-             : 'md:left-1/2 md:-translate-x-1/2'
-          }
-        `}
-      >
-         <div className="w-full max-w-2xl mx-auto p-3 rounded-2xl bg-[#0F1629]/95 border border-white/10 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] flex flex-col gap-3">
-             
-             {/* Row 1: Back + Input + Mic */}
-             <div className="flex items-center gap-3 w-full">
-               <button onClick={onBack} className="p-3 text-slate-400 hover:text-white hover:bg-white/10 rounded-xl transition-colors shrink-0 bg-black/20 md:bg-transparent">
-                  <ArrowLeft size={20} />
-               </button>
-               
-               <div className="h-6 w-[1px] bg-white/10 mx-1 shrink-0 hidden md:block"></div>
-
-               {/* Input Area */}
-               <div className={`flex-1 flex items-center bg-black/40 rounded-xl border px-3 py-2.5 transition-all duration-300 ${isRecording ? 'border-red-500/80 shadow-[0_0_15px_rgba(239,68,68,0.4)] bg-red-950/20' : 'border-white/10 focus-within:border-indigo-500/50'}`}>
-                  <input 
-                    type="text" 
-                    value={promptInput}
-                    onChange={(e) => setPromptInput(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
-                    placeholder={isRecording ? "正在听... (再次点击麦克风结束)" : "输入指令或语音..."}
-                    className="flex-1 bg-transparent border-none text-sm text-white placeholder-slate-500 focus:ring-0 px-0 min-w-0"
-                    disabled={isAnalyzing}
-                  />
-                  <button 
-                     onClick={toggleRecording}
-                     className={`p-2 rounded-lg transition-all ml-2 shrink-0 flex items-center justify-center ${
-                       isRecording 
-                        ? 'text-white bg-red-500 animate-pulse' 
-                        : 'text-slate-400 hover:text-white hover:bg-white/10'
-                     }`}
-                  >
-                     {isRecording ? <StopCircle size={20} className="fill-current"/> : <Mic size={20} />}
-                  </button>
-               </div>
+      {/* =======================
+          RIGHT PANEL: Results & Controls (Desktop) OR Bottom Sheet (Mobile)
+         ======================= */}
+      {isDesktop ? (
+          // DESKTOP: Sidebar Layout (Always Visible)
+          <div className="w-[450px] bg-[#0F1629]/90 border-l border-white/10 flex flex-col relative backdrop-blur-xl">
+             {/* Header */}
+             <div className="h-16 border-b border-white/5 flex items-center justify-between px-6 bg-white/[0.02]">
+                <div className="flex items-center gap-2 text-indigo-400 font-bold uppercase text-sm tracking-wider">
+                    <ScanLine size={16} /> 分析报告
+                </div>
+                {analysisText && (
+                   <button 
+                      onClick={isPlayingAudio ? stopAudio : () => speakText(analysisText)}
+                      className={`p-2 rounded-lg transition-all ${isPlayingAudio ? 'text-indigo-400 bg-indigo-500/10' : 'text-slate-400 hover:text-white'}`}
+                   >
+                      {isPlayingAudio ? <Pause size={18} /> : <Play size={18} />}
+                   </button>
+                )}
              </div>
 
-             {/* Row 2: Big Analyze Button */}
-             <button 
-                onClick={handleAnalyze}
-                disabled={!uploadedFile || isAnalyzing}
-                className={`flex items-center justify-center gap-2 w-full px-6 py-4 md:py-3 rounded-xl font-bold text-base transition-all ${
-                   !uploadedFile 
-                     ? 'bg-slate-800 text-slate-500 cursor-not-allowed' 
-                     : isAnalyzing 
-                        ? 'bg-indigo-600/50 text-indigo-200 cursor-wait'
-                        : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-[0_0_20px_rgba(79,70,229,0.4)] hover:shadow-[0_0_30px_rgba(79,70,229,0.6)] active:scale-[0.98]'
-                }`}
+             {/* Scrollable Content */}
+             <div className="flex-1 overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-white/10">
+                {!analysisText && !errorMsg ? (
+                    <div className="h-full flex flex-col items-center justify-center text-slate-500 gap-4 opacity-50">
+                        <Sparkles size={48} strokeWidth={1} />
+                        <p className="text-sm">上传图片并输入指令以开始</p>
+                    </div>
+                ) : (
+                    <AnalysisResultContent />
+                )}
+             </div>
+
+             {/* Footer: Fixed Control Bar */}
+             <div className="p-4 border-t border-white/5 bg-[#0a0f1e]">
+                <ActionBar className="w-full" />
+             </div>
+          </div>
+      ) : (
+          // MOBILE: Bottom Sheet
+          <div className={`
+             absolute z-50 bottom-0 inset-x-0 
+             bg-[#0F1629]/95 backdrop-blur-2xl 
+             border-t border-white/10 rounded-t-[32px]
+             shadow-[0_-10px_40px_rgba(0,0,0,0.5)]
+             transition-all duration-500 cubic-bezier(0.32, 0.72, 0, 1)
+             flex flex-col
+             ${isResultExpanded ? 'h-[85%]' : 'h-[0px] overflow-hidden border-none'}
+          `}>
+             <div 
+                onClick={() => setIsResultExpanded(!isResultExpanded)}
+                className="w-full h-[60px] flex items-center justify-between px-6 border-b border-white/5 cursor-pointer active:bg-white/5 shrink-0"
              >
-                {isAnalyzing ? <Loader2 size={20} className="animate-spin" /> : <Sparkles size={20} />}
-                <span>{isAnalyzing ? 'AI 深度分析中...' : '开始识别'}</span>
-             </button>
-         </div>
-      </div>
-
-      {/* 3. RIGHT/BOTTOM: Analysis Result */}
-      <div className={`
-         absolute md:relative z-40 
-         
-         /* Mobile: Bottom Sheet Styles */
-         bottom-0 inset-x-0 
-         bg-[#0F1629]/95 backdrop-blur-2xl 
-         border-t border-white/10 rounded-t-[32px] md:rounded-t-none
-         shadow-[0_-10px_40px_rgba(0,0,0,0.5)] md:shadow-none
-         transition-all duration-500 cubic-bezier(0.32, 0.72, 0, 1)
-         
-         /* Mobile Heights */
-         ${isResultExpanded ? 'h-[75%]' : 'h-[70px]'}
-
-         /* Desktop: Side Panel Styles */
-         md:h-auto md:w-[400px] md:bg-[#0F1629]/60 md:border-t-0 md:border-l 
-         
-         /* Desktop Visibility Animation */
-         ${!hasResult ? 'md:w-0 md:opacity-0 md:overflow-hidden' : 'md:w-[400px] md:opacity-100'}
-      `}>
-         
-         {/* Mobile Header (Draggable/Clickable) */}
-         <div 
-            onClick={() => setIsResultExpanded(!isResultExpanded)}
-            className="md:hidden w-full h-[70px] flex items-center justify-between px-6 border-b border-white/5 cursor-pointer active:bg-white/5"
-         >
-             <div className="flex items-center gap-3">
-                 {/* Drag Handle */}
-                 <div className="absolute top-2 left-1/2 -translate-x-1/2 w-12 h-1.5 bg-white/20 rounded-full"></div>
-                 <ScanLine size={18} className="text-indigo-400"/>
-                 <span className="font-bold text-white text-lg">分析报告</span>
+                 <div className="flex items-center gap-3">
+                     <div className="absolute top-2 left-1/2 -translate-x-1/2 w-12 h-1.5 bg-white/20 rounded-full"></div>
+                     <ScanLine size={18} className="text-indigo-400"/>
+                     <span className="font-bold text-white text-lg">分析报告</span>
+                 </div>
+                 <ChevronDown size={24} className="text-slate-400"/>
              </div>
-             {isResultExpanded ? <ChevronDown size={24} className="text-slate-400"/> : <ChevronUp size={24} className="text-slate-400"/>}
-         </div>
 
-         {/* Desktop Header */}
-         <div className="hidden md:flex p-5 border-b border-white/5 items-center justify-between bg-white/[0.02]">
-            <h3 className="text-sm font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-2">
-               <ScanLine size={16} /> 分析报告
-            </h3>
-            {analysisText && (
-               <button 
-                  onClick={isPlayingAudio ? stopAudio : () => speakText(analysisText)}
-                  className={`p-2 rounded-lg transition-all ${isPlayingAudio ? 'text-indigo-400 bg-indigo-500/10' : 'text-slate-400 hover:text-white'}`}
-               >
-                  {isPlayingAudio ? <Pause size={18} /> : <Play size={18} />}
-               </button>
-            )}
-         </div>
-
-         {/* Content Area */}
-         <div className="flex-1 h-[calc(100%-70px)] md:h-[calc(100%-65px)] overflow-y-auto p-6 md:p-6 pb-40 md:pb-6 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
-            {errorMsg ? (
-               <div className="flex flex-col items-center justify-center h-full text-center gap-4 animate-in zoom-in-95 py-10">
-                  <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center text-red-400">
-                     <AlertTriangle size={24} />
-                  </div>
-                  <div className="space-y-1">
-                     <p className="text-white font-medium">任务中断</p>
-                     <p className="text-xs text-red-400 px-4 leading-relaxed">{errorMsg}</p>
-                     <button onClick={handleAnalyze} className="mt-4 px-4 py-1.5 text-xs bg-white/10 hover:bg-white/20 rounded-full transition-colors">
-                        重试
-                     </button>
-                  </div>
-               </div>
-            ) : (
-               <div className="space-y-4">
-                  {promptInput && (
-                     <div className="p-3 rounded-lg bg-white/5 border border-white/5">
-                        <p className="text-xs text-slate-500 mb-1">您的指令</p>
-                        <p className="text-sm text-slate-300">"{promptInput}"</p>
-                     </div>
-                  )}
-                  
-                  {isAnalyzing && !analysisText && (
-                     <div className="flex items-center gap-3 text-sm text-indigo-300 p-4 rounded-xl bg-indigo-500/10 border border-indigo-500/20">
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>{statusText || "AI 正在思考..."}</span>
-                     </div>
-                  )}
-
-                  <div className="prose prose-invert prose-sm max-w-none">
-                     <p className="text-slate-300 leading-relaxed whitespace-pre-wrap text-base md:text-sm">{analysisText}</p>
-                  </div>
-                  
-                  {isAnalyzing && analysisText && (
-                     <div className="flex gap-1.5 pt-2">
-                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
-                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse delay-150"></span>
-                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse delay-300"></span>
-                     </div>
-                  )}
-                  <div ref={resultEndRef} />
-               </div>
-            )}
-         </div>
-      </div>
+             <div className="flex-1 overflow-y-auto p-6 pb-24">
+                <AnalysisResultContent />
+             </div>
+             
+             {/* Mobile Sheet Footer (Optional, mostly empty as controls are behind sheet) */}
+             {analysisText && (
+                <div className="absolute bottom-6 right-6">
+                   <button 
+                      onClick={isPlayingAudio ? stopAudio : () => speakText(analysisText)}
+                      className="p-3 bg-indigo-600 rounded-full shadow-lg text-white"
+                   >
+                      {isPlayingAudio ? <Pause size={20} /> : <Play size={20} />}
+                   </button>
+                </div>
+             )}
+          </div>
+      )}
       
       <style>{`
         @keyframes scan {
