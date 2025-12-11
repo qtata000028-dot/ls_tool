@@ -152,9 +152,9 @@ const LoginPanel: React.FC<LoginPanelProps> = ({ onSuccess }) => {
     const y = e.clientY - rect.top;
     const centerX = rect.width / 2;
     const centerY = rect.height / 2;
-    const rotateX = ((y - centerY) / centerY) * -2; 
-    const rotateY = ((x - centerX) / centerX) * 2;
-    setTransform(`perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale3d(1.005, 1.005, 1.005)`);
+    const rotateX = ((y - centerY) / centerY) * -1; // Reduced tilt for performance
+    const rotateY = ((x - centerX) / centerX) * 1;
+    setTransform(`perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale3d(1.002, 1.002, 1.002)`);
   };
 
   const handleMouseLeave = () => {
@@ -272,7 +272,8 @@ const LoginPanel: React.FC<LoginPanelProps> = ({ onSuccess }) => {
            transform: transform || 'perspective(1000px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)',
            transition: 'transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
         }}
-        className="relative rounded-[32px] bg-[#020617]/80 backdrop-blur-2xl border border-white/10 shadow-[0_40px_80px_-12px_rgba(0,0,0,0.8)] overflow-hidden ring-1 ring-white/10"
+        // Optimized: Reduced backdrop-blur-2xl to backdrop-blur-xl for performance
+        className="relative rounded-[32px] bg-[#020617]/80 backdrop-blur-xl border border-white/10 shadow-[0_40px_80px_-12px_rgba(0,0,0,0.8)] overflow-hidden ring-1 ring-white/10"
       >
         {/* Decorative Top Shine */}
         <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-blue-400/30 to-transparent"></div>

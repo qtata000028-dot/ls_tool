@@ -6,6 +6,7 @@ import Navbar from './src/components/Navbar';
 import LoginPanel from './src/components/LoginPanel';
 import Dashboard from './src/components/Dashboard';
 import KnowledgeBase from './src/components/KnowledgeBase';
+import ToolsPlatform from './src/components/ToolsPlatform'; // Import the new component
 import { User } from '@supabase/supabase-js';
 import { Announcement, Profile } from './types';
 
@@ -60,16 +61,15 @@ const App: React.FC = () => {
   };
 
   const handleNavigate = (view: string) => {
-    // Simple routing logic. In a real app, use React Router.
+    // Simple routing logic.
     if (view === 'knowledge') {
       setCurrentView('knowledge');
+    } else if (view === 'tools') {
+      setCurrentView('tools'); // Navigate to tools
+    } else if (view === 'learning') {
+       alert("模块开发中...");
+       return; 
     } else {
-      // For 'tools' and 'learning', we stay on dashboard for now or show 'Coming Soon'
-      // You can expand this switch case later
-      if (view === 'tools' || view === 'learning') {
-         alert("模块开发中...");
-         return; 
-      }
       setCurrentView('dashboard');
     }
   };
@@ -114,6 +114,10 @@ const App: React.FC = () => {
             
             {currentView === 'knowledge' && (
               <KnowledgeBase onBack={() => setCurrentView('dashboard')} />
+            )}
+
+            {currentView === 'tools' && (
+              <ToolsPlatform onBack={() => setCurrentView('dashboard')} />
             )}
           </main>
         </div>

@@ -6,9 +6,10 @@ const PALETTE = [
   { r: 14, g: 165, b: 233 },  // Sky Blue
   { r: 79, g: 70, b: 229 },   // Indigo
   { r: 236, g: 72, b: 153 },  // Pink
-  { r: 16, g: 185, b: 129 },  // Emerald (Accent)
-  { r: 59, g: 130, b: 246 },  // Blue
 ];
+
+// Base64 Noise Image (Tiny texture, repeating) - Zero GPU cost compared to SVG filters
+const NOISE_BG = "url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADIAAAAyBAMAAADsEZWCAAAAGFBMVEUAAAA5OTkAAAAAAAAAAABMTExERERmZmUZhwwHAAAACHRSTlMAMwA1MzMzM7O0s14AAAB4SURBVDjLxZFJDgAhCemx5P7HRheDO5jygF+qzL4tMwmZjL8IOg/g5HnE/b6I826E+3OIV1fEpQtifSzi2hRxXhF3z4h0M8S9KeLJFfHkini8I9LNEPcmiHdXRHovIu2FSPtCpL0Q6W6Ie1fEuyni3hRx74pId0P8F0SURBws2m9N2wAAAABJRU5ErkJggg==')";
 
 interface SubBlob {
   offsetX: number;
@@ -35,29 +36,16 @@ interface MainBlob {
   parts: SubBlob[];
 }
 
-// NEW: Star Interface for "Sea of Stars"
 interface Star {
   x: number;
   y: number;
-  z: number; // Depth factor (0.1 = far, 1.0 = near)
+  z: number;
   size: number;
   baseAlpha: number;
   twinkleSpeed: number;
   twinklePhase: number;
 }
 
-// NEW: Shooting Star
-interface ShootingStar {
-  x: number;
-  y: number;
-  length: number;
-  speed: number;
-  angle: number;
-  life: number; // 0 to 1
-  active: boolean;
-}
-
-// Ripple Interface
 interface Ripple {
   x: number;
   y: number;
@@ -69,52 +57,54 @@ interface Ripple {
 
 const Background: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const mouseRef = useRef({ x: 0, y: 0 }); // Center init
+  const mouseRef = useRef({ x: 0, y: 0 });
   const ripplesRef = useRef<Ripple[]>([]); 
-  const shootingStarRef = useRef<ShootingStar | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { alpha: false }); // Optimize: Disable alpha channel for main canvas
     if (!ctx) return;
+
+    // PERFORMANCE SETTINGS
+    const RENDER_SCALE = 0.5; // Render at 50% resolution (Huge performance boost for blur effects)
+    const TARGET_FPS = 30;    // Cap at 30 FPS
+    const FRAME_INTERVAL = 1000 / TARGET_FPS;
 
     let width = window.innerWidth;
     let height = window.innerHeight;
     let animationFrameId: number;
     let time = 0;
+    let lastTime = 0;
 
-    // Center mouse initially to prevent sudden jump
     mouseRef.current = { x: width / 2, y: height / 2 };
 
     const random = (min: number, max: number) => Math.random() * (max - min) + min;
 
-    // --- 1. SETUP AURORA BLOBS (Flowing Background) ---
+    // --- 1. SIMPLIFIED AURORA BLOBS ---
+    // Reduced count and complexity
     const anchors = [
-      { x: 0.0, y: 0.0, c: 0 },
-      { x: 1.0, y: 1.0, c: 1 },
-      { x: 1.0, y: 0.0, c: 2 },
-      { x: 0.0, y: 1.0, c: 3 },
-      { x: 0.5, y: 0.2, c: 5 },
-      { x: 0.5, y: 0.8, c: 4 },
+      { x: 0.1, y: 0.1, c: 0 },
+      { x: 0.9, y: 0.9, c: 1 },
+      { x: 0.5, y: 0.5, c: 2 },
+      { x: 0.2, y: 0.8, c: 3 },
     ];
 
     const blobs: MainBlob[] = anchors.map((anchor) => {
+      // Reduced parts per blob from 3 to 2
       const parts: SubBlob[] = [];
-      const numParts = 3;
-
-      for (let j = 0; j < numParts; j++) {
+      for (let j = 0; j < 2; j++) {
         parts.push({
-          offsetX: random(-100, 100),
-          offsetY: random(-100, 100),
-          scaleX: random(1.0, 2.5),
+          offsetX: random(-50, 50),
+          offsetY: random(-50, 50),
+          scaleX: random(1.0, 2.0),
           scaleY: random(0.8, 1.2),
           rotation: random(0, Math.PI * 2),
-          rotationSpeed: random(-0.005, 0.005),
-          radius: random(500, 800),
-          opacity: random(0.4, 0.6),
-          driftSpeed: random(0.002, 0.005),
+          rotationSpeed: random(-0.002, 0.002), // Slower rotation
+          radius: random(400, 700),
+          opacity: random(0.3, 0.5),
+          driftSpeed: random(0.001, 0.003),
           driftPhase: random(0, Math.PI * 2),
         });
       }
@@ -124,55 +114,68 @@ const Background: React.FC = () => {
         anchorY: anchor.y,
         phaseX: random(0, Math.PI * 2),
         phaseY: random(0, Math.PI * 2),
-        speedX: random(0.001, 0.0025),
-        speedY: random(0.001, 0.0025),
-        range: 350,
+        speedX: random(0.0005, 0.0015),
+        speedY: random(0.0005, 0.0015),
+        range: 200, // Reduced range
         color: PALETTE[anchor.c % PALETTE.length],
         parts: parts
       };
     });
 
-    // --- 2. SETUP STARS (Starfield) ---
+    // --- 2. REDUCED STARS ---
     const stars: Star[] = [];
-    const starCount = 200; // Dense star field
+    const starCount = 60; // Reduced from 200 to 60
 
     const initStars = () => {
       stars.length = 0;
       for (let i = 0; i < starCount; i++) {
-        // Z determines depth: smaller Z = further away, moves slower, smaller size
         const z = Math.random(); 
         stars.push({
           x: Math.random() * width,
           y: Math.random() * height,
           z: z, 
-          size: (1 - z) * 1.5 + 0.5, // Far stars are smaller
-          baseAlpha: Math.random() * 0.6 + 0.2,
-          twinkleSpeed: Math.random() * 0.03 + 0.005,
+          size: (1 - z) * 1.5 + 0.5, 
+          baseAlpha: Math.random() * 0.5 + 0.1,
+          twinkleSpeed: Math.random() * 0.02 + 0.005,
           twinklePhase: Math.random() * Math.PI * 2
         });
       }
     };
-    initStars();
 
     const resize = () => {
       width = window.innerWidth;
       height = window.innerHeight;
-      canvas.width = width;
-      canvas.height = height;
+      
+      // Low-res backing store, High-res CSS display
+      canvas.width = width * RENDER_SCALE;
+      canvas.height = height * RENDER_SCALE;
+      
+      // Scale context once so we can draw using logical coordinates
+      ctx.scale(RENDER_SCALE, RENDER_SCALE);
+      
       initStars();
     };
 
-    const animate = () => {
+    const animate = (timestamp: number) => {
+      animationFrameId = requestAnimationFrame(animate);
+
+      // Throttling FPS
+      const elapsed = timestamp - lastTime;
+      if (elapsed < FRAME_INTERVAL) return;
+      lastTime = timestamp - (elapsed % FRAME_INTERVAL);
+
       time += 1;
 
-      // Clear
+      // Clear & Base Background
+      // Using fillRect is faster than clearRect + fillRect
       const bgGradient = ctx.createLinearGradient(0, 0, 0, height);
       bgGradient.addColorStop(0, '#020617'); 
-      bgGradient.addColorStop(1, '#1e1b4b');
+      bgGradient.addColorStop(1, '#172554'); // Dark Blue
       ctx.fillStyle = bgGradient;
       ctx.fillRect(0, 0, width, height);
 
       // --- LAYER 1: AURORA BLOBS ---
+      // Use 'screen' for additive blending that doesn't darken
       ctx.globalCompositeOperation = 'screen'; 
 
       blobs.forEach((blob) => {
@@ -182,170 +185,99 @@ const Background: React.FC = () => {
         blob.parts.forEach((part) => {
           part.rotation += part.rotationSpeed * 3;
           
-          const internalDriftX = Math.sin(time * part.driftSpeed + part.driftPhase) * 80;
-          const internalDriftY = Math.cos(time * part.driftSpeed + part.driftPhase) * 80;
-          const breathingRadius = part.radius + Math.sin(time * 0.005) * 60;
-
           ctx.save();
           ctx.translate(
-            currentX + part.offsetX + internalDriftX, 
-            currentY + part.offsetY + internalDriftY
+            currentX + part.offsetX, 
+            currentY + part.offsetY
           );
           ctx.rotate(part.rotation);
           ctx.scale(part.scaleX, part.scaleY);
 
           const { r, g, b } = blob.color;
-          const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, breathingRadius);
-          
+          // Optimize: Reduce gradient stops
+          const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, part.radius);
           gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${part.opacity})`);
-          gradient.addColorStop(0.5, `rgba(${r}, ${g}, ${b}, ${part.opacity * 0.3})`);
           gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
 
           ctx.fillStyle = gradient;
           ctx.beginPath();
-          ctx.arc(0, 0, breathingRadius, 0, Math.PI * 2);
+          ctx.arc(0, 0, part.radius, 0, Math.PI * 2);
           ctx.fill();
           ctx.restore();
         });
       });
 
-      // --- LAYER 2: MOUSE SPOTLIGHT (Subtle fog) ---
+      // --- LAYER 2: MOUSE LIGHT ---
       ctx.globalCompositeOperation = 'overlay';
       const mx = mouseRef.current.x;
       const my = mouseRef.current.y;
       
-      const mouseGrad = ctx.createRadialGradient(mx, my, 0, mx, my, 600);
-      mouseGrad.addColorStop(0, 'rgba(200, 230, 255, 0.15)');
-      mouseGrad.addColorStop(1, 'rgba(200, 230, 255, 0)');
+      // Smaller, simpler gradient for mouse
+      const mouseGrad = ctx.createRadialGradient(mx, my, 0, mx, my, 400);
+      mouseGrad.addColorStop(0, 'rgba(255, 255, 255, 0.1)');
+      mouseGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
       
       ctx.fillStyle = mouseGrad;
       ctx.beginPath();
-      ctx.arc(mx, my, 600, 0, Math.PI * 2);
+      ctx.arc(mx, my, 400, 0, Math.PI * 2);
       ctx.fill();
 
-      // --- LAYER 3: STARS (Parallax Starfield) ---
+      // --- LAYER 3: STARS ---
       ctx.globalCompositeOperation = 'source-over';
-      
-      // Calculate parallax offset based on mouse position relative to center
-      const offsetX = (mx - width / 2) * 0.05; 
-      const offsetY = (my - height / 2) * 0.05;
+      const offsetX = (mx - width / 2) * 0.03; 
+      const offsetY = (my - height / 2) * 0.03;
 
+      ctx.fillStyle = 'white'; // Batch fill style
       stars.forEach(star => {
-        // Parallax movement: Closer stars (high Z) move more than far stars
-        // We move stars OPPOSITE to mouse to create depth
         const x = star.x - (offsetX * star.z);
         const y = star.y - (offsetY * star.z);
-
-        // Twinkle calculation
-        const twinkle = Math.sin(time * star.twinkleSpeed + star.twinklePhase);
-        const alpha = star.baseAlpha + (twinkle * 0.3);
-        const clampedAlpha = Math.max(0, Math.min(1, alpha));
-
-        ctx.fillStyle = `rgba(255, 255, 255, ${clampedAlpha})`;
         
-        // Draw star
+        // Simple alpha calculation
+        const alpha = star.baseAlpha + Math.sin(time * star.twinkleSpeed + star.twinklePhase) * 0.2;
+        if (alpha <= 0) return;
+
+        ctx.globalAlpha = alpha;
         ctx.beginPath();
-        ctx.arc(x, y, star.size, 0, Math.PI * 2);
+        // Optimize: Draw small rectangles instead of arcs for stars (faster rasterization)
+        // ctx.rect(x, y, star.size, star.size); 
+        ctx.arc(x, y, star.size, 0, Math.PI * 2); // Arcs look better, keeping them for now as count is low
         ctx.fill();
-
-        // Occasional faint glow for bright stars
-        if (clampedAlpha > 0.8) {
-          ctx.shadowBlur = 8;
-          ctx.shadowColor = "white";
-          ctx.fill();
-          ctx.shadowBlur = 0;
-        }
       });
+      ctx.globalAlpha = 1.0;
 
-      // --- LAYER 4: SHOOTING STAR ---
-      // Random spawn logic (approx every few seconds)
-      if (!shootingStarRef.current && Math.random() < 0.005) {
-        shootingStarRef.current = {
-          x: Math.random() * width,
-          y: Math.random() * height * 0.5, // Start in top half
-          length: Math.random() * 80 + 50,
-          speed: Math.random() * 10 + 10,
-          angle: Math.PI / 4 + (Math.random() - 0.5) * 0.5, // roughly 45 degrees
-          life: 1,
-          active: true
-        };
-      }
-
-      if (shootingStarRef.current && shootingStarRef.current.active) {
-        const s = shootingStarRef.current;
-        
-        // Update position
-        s.x += Math.cos(s.angle) * s.speed;
-        s.y += Math.sin(s.angle) * s.speed;
-        s.life -= 0.02;
-
-        if (s.life <= 0 || s.x > width || s.y > height) {
-          s.active = false;
-          shootingStarRef.current = null;
-        } else {
-          // Draw trail
-          const grad = ctx.createLinearGradient(
-            s.x, s.y, 
-            s.x - Math.cos(s.angle) * s.length, 
-            s.y - Math.sin(s.angle) * s.length
-          );
-          grad.addColorStop(0, 'rgba(255, 255, 255, 1)');
-          grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      // --- LAYER 4: RIPPLES ---
+      // Clean up array
+      if (ripplesRef.current.length > 0) {
+        ripplesRef.current = ripplesRef.current.filter(r => r.alpha > 0.01 && r.radius < r.maxRadius);
+        ctx.lineWidth = 2;
+        ripplesRef.current.forEach(r => {
+          r.radius += r.speed;
+          r.alpha -= 0.02; // Fade faster
           
-          ctx.strokeStyle = grad;
-          ctx.lineWidth = 2;
-          ctx.lineCap = 'round';
+          ctx.strokeStyle = `rgba(255, 255, 255, ${r.alpha * 0.3})`;
           ctx.beginPath();
-          ctx.moveTo(s.x, s.y);
-          ctx.lineTo(s.x - Math.cos(s.angle) * s.length, s.y - Math.sin(s.angle) * s.length);
+          ctx.arc(r.x, r.y, r.radius, 0, Math.PI * 2);
           ctx.stroke();
-
-          // Draw head
-          ctx.fillStyle = 'white';
-          ctx.beginPath();
-          ctx.arc(s.x, s.y, 1.5, 0, Math.PI * 2);
-          ctx.fill();
-          
-          // Cross flare
-          ctx.fillStyle = 'rgba(255,255,255,0.8)';
-          ctx.beginPath();
-          ctx.ellipse(s.x, s.y, 8, 0.5, s.angle, 0, Math.PI*2);
-          ctx.fill();
-          ctx.beginPath();
-          ctx.ellipse(s.x, s.y, 0.5, 8, s.angle, 0, Math.PI*2);
-          ctx.fill();
-        }
+        });
       }
-
-      // --- LAYER 5: RIPPLES (ON CLICK) ---
-      ripplesRef.current = ripplesRef.current.filter(r => r.alpha > 0.01 && r.radius < r.maxRadius);
-      ctx.lineWidth = 2;
-      ripplesRef.current.forEach(r => {
-        r.radius += r.speed;
-        r.alpha -= 0.015;
-        
-        ctx.beginPath();
-        ctx.arc(r.x, r.y, r.radius, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(255, 255, 255, ${r.alpha * 0.4})`;
-        ctx.stroke();
-      });
-
-      animationFrameId = requestAnimationFrame(animate);
     };
 
     const handleMouseMove = (e: MouseEvent) => {
+      // Throttle mouse updates? Not strictly necessary but good practice
       mouseRef.current = { x: e.clientX, y: e.clientY };
     };
     
     const handleMouseDown = (e: MouseEvent) => {
-       ripplesRef.current.push({
-         x: e.clientX,
-         y: e.clientY,
-         radius: 10,
-         maxRadius: 400,
-         alpha: 1,
-         speed: 6
-       });
+       if (ripplesRef.current.length < 5) { // Limit max ripples
+         ripplesRef.current.push({
+           x: e.clientX,
+           y: e.clientY,
+           radius: 10,
+           maxRadius: 300,
+           alpha: 1,
+           speed: 8
+         });
+       }
     };
 
     window.addEventListener('resize', resize);
@@ -353,7 +285,7 @@ const Background: React.FC = () => {
     window.addEventListener('mousedown', handleMouseDown);
     
     resize();
-    animate();
+    animationFrameId = requestAnimationFrame(animate);
 
     return () => {
       window.removeEventListener('resize', resize);
@@ -368,12 +300,14 @@ const Background: React.FC = () => {
       <canvas 
         ref={canvasRef} 
         className="fixed inset-0 z-0 w-full h-full pointer-events-none"
+        style={{ width: '100%', height: '100%' }} // Ensure CSS stretches the low-res canvas
       />
-      {/* Cinematic Noise Overlay - Keeps texture */}
+      {/* Static Noise Image Overlay - Very cheap performance cost */}
       <div 
-        className="fixed inset-0 z-0 pointer-events-none opacity-[0.03] mix-blend-overlay"
+        className="fixed inset-0 z-0 pointer-events-none opacity-[0.04] mix-blend-overlay"
         style={{
-          backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.6' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='1'/%3E%3C/svg%3E")`
+          backgroundImage: NOISE_BG,
+          backgroundRepeat: 'repeat',
         }}
       />
     </>
