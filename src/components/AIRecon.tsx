@@ -222,7 +222,8 @@ const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
   const hasResult = !!(analysisText || errorMsg);
 
   return (
-    <div className="w-full h-[85vh] max-w-[1600px] mx-auto bg-[#020617] border border-white/10 rounded-3xl overflow-hidden shadow-2xl flex flex-col md:flex-row animate-in fade-in zoom-in-95 duration-500 relative">
+    // 使用 calc(100dvh - X) 确保在移动端地址栏收缩时也能铺满，防止底部按钮被遮挡
+    <div className="w-full h-[calc(100dvh-110px)] max-w-[1600px] mx-auto bg-[#020617] border border-white/10 rounded-3xl overflow-hidden shadow-2xl flex flex-col md:flex-row animate-in fade-in zoom-in-95 duration-500 relative">
       
       {/* 1. LEFT: Immersive Image Area */}
       <div className="flex-1 relative bg-black flex flex-col items-center justify-center overflow-hidden group">
@@ -279,8 +280,12 @@ const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
         className={`
           absolute z-50 transition-all duration-500 ease-in-out
           
-          /* Mobile: Fixed at bottom, floating above everything */
-          bottom-6 left-4 right-4 
+          /* Mobile Position Logic: 
+             Collapsed: Bottom 85px (Above the header) 
+             Expanded: Bottom 24px (Floating over content)
+          */
+          left-4 right-4 
+          ${isResultExpanded ? 'bottom-6' : 'bottom-[85px]'}
 
           /* Desktop: Smart positioning based on sidebar state */
           /* If sidebar is open (hasResult), center in the LEFT area. If closed, center in screen. */
