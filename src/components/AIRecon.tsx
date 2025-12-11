@@ -39,7 +39,8 @@ const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
     if ('webkitSpeechRecognition' in window) {
       const SpeechRecognition = (window as any).webkitSpeechRecognition;
       const recognition = new SpeechRecognition();
-      recognition.continuous = false;
+      // Enable continuous listening
+      recognition.continuous = true; 
       recognition.interimResults = true;
       recognition.lang = 'zh-CN';
 
@@ -48,10 +49,18 @@ const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
         for (let i = event.resultIndex; i < event.results.length; ++i) {
           transcript += event.results[i][0].transcript;
         }
-        setPromptInput(transcript); 
+        // Update input with latest transcript
+        // Note: For continuous, we might want to append, but replacing with current session transcript is usually safer for logic
+        // To append, we'd need to track previous sessions. For now, replacing current input allows correction.
+        if (transcript) {
+           setPromptInput(transcript);
+        }
       };
 
       recognition.onend = () => {
+        // Only set false if we intended to stop, or handled manually
+        // If it stops automatically due to silence but we wanted continuous, we might need logic to restart
+        // For simplicity, we let it stop and update UI
         setIsRecording(false);
       };
       
@@ -98,15 +107,22 @@ const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
   };
 
   const toggleRecording = () => {
+    if (!recognitionRef.current) {
+      alert("您的浏览器不支持语音识别功能 (建议使用 Chrome)");
+      return;
+    }
+
     if (isRecording) {
-      recognitionRef.current?.stop();
+      recognitionRef.current.stop();
+      setIsRecording(false);
     } else {
-      if (!recognitionRef.current) {
-        alert("您的浏览器不支持语音识别功能 (建议使用 Chrome)");
-        return;
+      try {
+        recognitionRef.current.start();
+        setIsRecording(true);
+        setPromptInput(''); // Clear previous input on new recording session
+      } catch (e) {
+        console.error("Start recording failed", e);
       }
-      recognitionRef.current.start();
-      setIsRecording(true);
     }
   };
 
@@ -118,6 +134,12 @@ const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
     setErrorMsg(null);
     stopAudio();
     setIsResultExpanded(true); // Open panel to show loading status
+    
+    // Stop recording if active
+    if (isRecording) {
+       recognitionRef.current?.stop();
+       setIsRecording(false);
+    }
     
     if (abortControllerRef.current) abortControllerRef.current.abort();
     abortControllerRef.current = new AbortController();
@@ -233,7 +255,7 @@ const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
          <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
 
          {imagePreview ? (
-           <div className="relative w-full h-full flex items-center justify-center p-4 pb-32 md:pb-24">
+           <div className="relative w-full h-full flex items-center justify-center p-4 pb-48 md:pb-24">
               <img src={imagePreview} className="max-w-full max-h-full object-contain z-10 shadow-[0_0_50px_rgba(0,0,0,0.8)]" alt="Preview" />
               
               <div 
@@ -275,75 +297,73 @@ const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
          )}
       </div>
 
-      {/* 2. FLOATING ACTION BAR (Global) */}
+      {/* 2. FLOATING ACTION BAR (Global - Mobile Optimized) */}
       <div 
         className={`
-          absolute z-50 transition-all duration-500 ease-in-out
+          absolute z-50 transition-all duration-500 ease-in-out px-4
           
-          /* Mobile Position Logic: 
-             Collapsed: Bottom 85px (Above the header) 
-             Expanded: Bottom 24px (Floating over content)
-          */
-          left-4 right-4 
-          ${isResultExpanded ? 'bottom-6' : 'bottom-[85px]'}
+          /* Mobile: Smart Positioning */
+          left-0 right-0 
+          ${isResultExpanded ? 'bottom-4' : 'bottom-[80px]'}
 
-          /* Desktop: Smart positioning based on sidebar state */
-          /* If sidebar is open (hasResult), center in the LEFT area. If closed, center in screen. */
-          md:bottom-8 md:w-[600px] 
+          /* Desktop: Smart positioning */
+          md:bottom-8 md:left-auto md:right-auto md:w-[600px] md:px-0
           ${hasResult 
-             ? 'md:left-[calc(50%-200px)] md:-translate-x-1/2' // Center in the left remaining space (approx)
-             : 'md:left-1/2 md:-translate-x-1/2' // Center of screen
+             ? 'md:left-[calc(50%-200px)] md:-translate-x-1/2' 
+             : 'md:left-1/2 md:-translate-x-1/2'
           }
         `}
       >
-         <div className="w-full max-w-2xl mx-auto px-4 py-3 rounded-2xl bg-[#0F1629]/90 border border-white/10 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] flex items-center gap-3">
-             <button onClick={onBack} className="p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-xl transition-colors shrink-0">
-                <ArrowLeft size={20} />
-             </button>
+         <div className="w-full max-w-2xl mx-auto p-3 md:p-3 rounded-2xl bg-[#0F1629]/95 border border-white/10 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] flex flex-col md:flex-row gap-3">
              
-             <div className="h-6 w-[1px] bg-white/10 mx-1 shrink-0"></div>
+             {/* Top Row: Back + Input */}
+             <div className="flex items-center gap-3 w-full">
+               <button onClick={onBack} className="p-2.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-xl transition-colors shrink-0 bg-black/20 md:bg-transparent">
+                  <ArrowLeft size={20} />
+               </button>
+               
+               <div className="h-6 w-[1px] bg-white/10 mx-1 shrink-0 hidden md:block"></div>
 
-             {/* Input Area */}
-             <div className="flex-1 flex items-center bg-black/40 rounded-xl border border-white/10 px-3 py-2 focus-within:border-indigo-500/50 transition-colors">
-                <input 
-                  type="text" 
-                  value={promptInput}
-                  onChange={(e) => setPromptInput(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
-                  placeholder={isRecording ? "正在聆听..." : "输入指令..."}
-                  className="flex-1 bg-transparent border-none text-base md:text-sm text-white placeholder-slate-500 focus:ring-0 px-0"
-                  disabled={isAnalyzing}
-                />
-                <button 
-                   onMouseDown={toggleRecording}
-                   onMouseUp={toggleRecording}
-                   onTouchStart={toggleRecording}
-                   onTouchEnd={toggleRecording}
-                   className={`p-1.5 rounded-lg transition-all ml-2 ${isRecording ? 'text-red-400 bg-red-500/20 animate-pulse' : 'text-slate-400 hover:text-white hover:bg-white/10'}`}
-                   title="长按语音输入"
-                >
-                   <Mic size={18} />
-                </button>
+               {/* Input Area */}
+               <div className={`flex-1 flex items-center bg-black/40 rounded-xl border px-3 py-2.5 transition-all duration-300 ${isRecording ? 'border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.2)]' : 'border-white/10 focus-within:border-indigo-500/50'}`}>
+                  <input 
+                    type="text" 
+                    value={promptInput}
+                    onChange={(e) => setPromptInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
+                    placeholder={isRecording ? "正在聆听... (点击麦克风停止)" : "输入指令..."}
+                    className="flex-1 bg-transparent border-none text-sm text-white placeholder-slate-500 focus:ring-0 px-0 min-w-0"
+                    disabled={isAnalyzing}
+                  />
+                  <button 
+                     onClick={toggleRecording}
+                     className={`p-1.5 rounded-lg transition-all ml-2 shrink-0 ${isRecording ? 'text-red-400 bg-red-500/20 animate-pulse scale-110' : 'text-slate-400 hover:text-white hover:bg-white/10'}`}
+                     title={isRecording ? "点击停止录音" : "点击开始录音"}
+                  >
+                     <Mic size={20} />
+                  </button>
+               </div>
              </div>
 
+             {/* Bottom Row / Side: Analyze Button */}
              <button 
                 onClick={handleAnalyze}
                 disabled={!uploadedFile || isAnalyzing}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm transition-all shrink-0 ${
+                className={`flex items-center justify-center gap-2 px-6 py-3 md:py-2.5 rounded-xl font-bold text-sm transition-all shrink-0 w-full md:w-auto ${
                    !uploadedFile 
                      ? 'bg-slate-800 text-slate-500 cursor-not-allowed' 
                      : isAnalyzing 
                         ? 'bg-indigo-600/50 text-indigo-200 cursor-wait'
-                        : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-[0_0_20px_rgba(79,70,229,0.4)]'
+                        : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-[0_0_20px_rgba(79,70,229,0.4)] hover:shadow-[0_0_30px_rgba(79,70,229,0.6)] active:scale-[0.98]'
                 }`}
              >
-                {isAnalyzing ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
-                <span className="hidden sm:inline">{isAnalyzing ? '分析中' : '开始识别'}</span>
+                {isAnalyzing ? <Loader2 size={20} className="animate-spin" /> : <Sparkles size={20} />}
+                <span>{isAnalyzing ? '正在分析...' : '开始识别'}</span>
              </button>
          </div>
       </div>
 
-      {/* 3. RIGHT/BOTTOM: Analysis Result (Bottom Sheet on Mobile, Side Panel on Desktop) */}
+      {/* 3. RIGHT/BOTTOM: Analysis Result */}
       <div className={`
          absolute md:relative z-40 
          
@@ -394,7 +414,7 @@ const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
          </div>
 
          {/* Content Area */}
-         <div className="flex-1 h-[calc(100%-70px)] md:h-[calc(100%-65px)] overflow-y-auto p-6 md:p-6 pb-32 md:pb-6 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+         <div className="flex-1 h-[calc(100%-70px)] md:h-[calc(100%-65px)] overflow-y-auto p-6 md:p-6 pb-40 md:pb-6 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
             {errorMsg ? (
                <div className="flex flex-col items-center justify-center h-full text-center gap-4 animate-in zoom-in-95 py-10">
                   <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center text-red-400">
