@@ -28,6 +28,12 @@ const App: React.FC = () => {
     console.warn("Forcing logout due to session error...");
     try {
       localStorage.removeItem('supabase.auth.token');
+      // Clearing local storage keys that Supabase might use
+      for (const key in localStorage) {
+        if (key.startsWith('sb-')) {
+            localStorage.removeItem(key);
+        }
+      }
       await supabase.auth.signOut();
     } catch (e) {
       // ignore
@@ -41,7 +47,8 @@ const App: React.FC = () => {
   useEffect(() => {
     // GLOBAL ERROR HANDLER for unhandled promise rejections (often from Supabase client internals)
     const handleRejection = (event: PromiseRejectionEvent) => {
-      const msg = event.reason?.message || "";
+      const msg = event.reason?.message || JSON.stringify(event.reason) || "";
+      // Catch "Invalid Refresh Token" or "refresh_token_not_found"
       if (
         typeof msg === 'string' && 
         (msg.includes("Refresh Token") || msg.includes("refresh_token_not_found") || msg.includes("JWT expired"))

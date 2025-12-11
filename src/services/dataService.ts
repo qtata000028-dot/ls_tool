@@ -156,11 +156,11 @@ export const dataService = {
   // NEW: Upload image for AI analysis
   async uploadAnalysisImage(file: File): Promise<string | null> {
     try {
-      // ULTIMATE OPTIMIZATION for Vercel Hobby Plan (10s timeout):
-      // Resize to 600px width and 0.5 quality.
-      // This creates a tiny file (~50-80KB) which uploads instantly and downloads instantly by Aliyun.
-      // Qwen-VL handles low-res images very well for general object/text recognition.
-      const compressedBlob = await this.compressImage(file, 600, 0.5);
+      // OPTIMIZATION STRATEGY for High Precision Counting (e.g., Wood Planks):
+      // 1. Width: 1280px. 600px is too blurry for counting small objects. 1280px is optimal for Qwen-VL.
+      // 2. Quality: 0.7. Good enough for edge detection, but reduces file size significantly vs 0.9.
+      // Result: ~200KB-400KB file. Fast enough to avoid Vercel timeouts, detailed enough for counting.
+      const compressedBlob = await this.compressImage(file, 1280, 0.7);
       const compressedFile = new File([compressedBlob], 'analysis.jpg', { type: 'image/jpeg' });
 
       // Upload to 'ai-vision' bucket
