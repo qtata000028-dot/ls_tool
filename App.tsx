@@ -8,6 +8,7 @@ import Dashboard from './src/components/Dashboard';
 import KnowledgeBase from './src/components/KnowledgeBase';
 import ToolsPlatform from './src/components/ToolsPlatform';
 import AIRecon from './src/components/AIRecon'; // Import AI Vision Hub
+import AISprite from './src/components/AISprite'; // Import AI Sprite Assistant
 import { User } from '@supabase/supabase-js';
 import { Announcement, Profile } from './types';
 
@@ -188,6 +189,9 @@ const App: React.FC = () => {
               <AIRecon onBack={() => setCurrentView('dashboard')} />
             )}
           </main>
+
+          {/* GLOBAL AI ASSISTANT SPRITE */}
+          <AISprite onNavigate={handleNavigate} />
         </div>
       )}
     </div>
