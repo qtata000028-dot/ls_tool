@@ -31,14 +31,26 @@ const ToolsPlatform: React.FC<ToolsPlatformProps> = ({ onBack }) => {
       }
 
       // 直接从列中获取，不再解构 JSON
-      const { api_url, api_token } = configData;
+      let { api_url, api_token } = configData;
 
       if (!api_url || !api_token) {
         throw new Error("配置无效：数据库中 api_url 或 api_token 字段为空。");
       }
 
+      // 自动补全 URL 路径逻辑
+      // 1. 去除首尾空格
+      let targetUrl = api_url.trim();
+      // 2. 去除末尾斜杠 (如果存在)
+      if (targetUrl.endsWith('/')) {
+        targetUrl = targetUrl.slice(0, -1);
+      }
+      // 3. 如果未包含后缀，则追加
+      if (!targetUrl.endsWith('/api/sql/execute')) {
+        targetUrl += '/api/sql/execute';
+      }
+
       // 2. 查数据：调用外部接口
-      const response = await fetch(api_url, {
+      const response = await fetch(targetUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
