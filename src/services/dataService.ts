@@ -123,8 +123,6 @@ export const dataService = {
       // 2. Upload to Storage
       const fileName = `${userId}/avatar_${Date.now()}.jpg`;
       
-      // Remove old avatars if strictly managing space (optional, skipping for simplicity)
-      
       const { error: uploadError } = await supabase.storage
         .from('avatars')
         .upload(fileName, compressedFile, { upsert: true });
@@ -147,6 +145,34 @@ export const dataService = {
       return publicUrl;
     } catch (error) {
       console.error("Avatar upload failed:", error);
+      return null;
+    }
+  },
+
+  // NEW: Upload image for AI analysis
+  async uploadAnalysisImage(file: File): Promise<string | null> {
+    try {
+      // Compress lightly (we need detail for AI, but not huge files)
+      const compressedBlob = await this.compressImage(file, 1600, 0.85);
+      const compressedFile = new File([compressedBlob], 'analysis.jpg', { type: 'image/jpeg' });
+
+      // Upload to 'ai-vision' bucket
+      // NOTE: Ensure 'ai-vision' bucket exists and is public via SQL
+      const fileName = `analysis_${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`;
+      
+      const { error: uploadError } = await supabase.storage
+        .from('ai-vision')
+        .upload(fileName, compressedFile);
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('ai-vision')
+        .getPublicUrl(fileName);
+
+      return publicUrl;
+    } catch (error) {
+      console.error("Analysis image upload failed:", error);
       return null;
     }
   }

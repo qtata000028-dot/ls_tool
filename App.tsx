@@ -6,7 +6,8 @@ import Navbar from './src/components/Navbar';
 import LoginPanel from './src/components/LoginPanel';
 import Dashboard from './src/components/Dashboard';
 import KnowledgeBase from './src/components/KnowledgeBase';
-import ToolsPlatform from './src/components/ToolsPlatform'; // Import the new component
+import ToolsPlatform from './src/components/ToolsPlatform';
+import AIRecon from './src/components/AIRecon'; // Import AI Vision Hub
 import { User } from '@supabase/supabase-js';
 import { Announcement, Profile } from './types';
 
@@ -15,7 +16,7 @@ const App: React.FC = () => {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
-  const [currentView, setCurrentView] = useState('dashboard'); // 'dashboard' | 'knowledge' | 'tools' | 'learning'
+  const [currentView, setCurrentView] = useState('dashboard'); // 'dashboard' | 'knowledge' | 'tools' | 'learning' | 'vision'
 
   // Function to refresh profile (e.g., after avatar upload)
   const fetchProfile = async (userId: string) => {
@@ -61,11 +62,13 @@ const App: React.FC = () => {
   };
 
   const handleNavigate = (view: string) => {
-    // Simple routing logic.
+    // Routing Logic
     if (view === 'knowledge') {
       setCurrentView('knowledge');
     } else if (view === 'tools') {
-      setCurrentView('tools'); // Navigate to tools
+      setCurrentView('tools');
+    } else if (view === 'vision') {
+      setCurrentView('vision'); // Navigate to Vision Hub
     } else if (view === 'learning') {
        alert("模块开发中...");
        return; 
@@ -118,6 +121,10 @@ const App: React.FC = () => {
 
             {currentView === 'tools' && (
               <ToolsPlatform onBack={() => setCurrentView('dashboard')} />
+            )}
+
+            {currentView === 'vision' && (
+              <AIRecon onBack={() => setCurrentView('dashboard')} />
             )}
           </main>
         </div>
