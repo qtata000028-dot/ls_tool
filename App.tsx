@@ -24,26 +24,74 @@ const App: React.FC = () => {
     setProfile(userProfile);
   };
 
+  const forceLogout = async () => {
+    console.warn("Forcing logout due to session error...");
+    try {
+      localStorage.removeItem('supabase.auth.token');
+      await supabase.auth.signOut();
+    } catch (e) {
+      // ignore
+    } finally {
+      setUser(null);
+      setProfile(null);
+      setCurrentView('dashboard');
+    }
+  };
+
   useEffect(() => {
-    // 1. Check active session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchProfile(session.user.id);
+    // GLOBAL ERROR HANDLER for unhandled promise rejections (often from Supabase client internals)
+    const handleRejection = (event: PromiseRejectionEvent) => {
+      const msg = event.reason?.message || "";
+      if (
+        typeof msg === 'string' && 
+        (msg.includes("Refresh Token") || msg.includes("refresh_token_not_found") || msg.includes("JWT expired"))
+      ) {
+        event.preventDefault(); // Prevent console spam
+        forceLogout();
       }
-      setLoading(false);
-    });
+    };
+    window.addEventListener("unhandledrejection", handleRejection);
+
+    const initSession = async () => {
+      try {
+        // 1. Check active session
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (error) {
+           console.warn("Session check error:", error.message);
+           // Robustly handle refresh token errors by forcing sign out
+           if (error.message.includes("Refresh Token") || error.message.includes("refresh_token_not_found")) {
+             await forceLogout();
+           }
+        } else {
+          setUser(session?.user ?? null);
+          if (session?.user) {
+            fetchProfile(session.user.id);
+          }
+        }
+      } catch (err) {
+        console.error("Auth init failed:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    initSession();
 
     // 2. Listen for auth changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchProfile(session.user.id);
-      } else {
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      // console.log("Auth Event:", event);
+      if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
+        setUser(null);
         setProfile(null);
-        setCurrentView('dashboard'); // Reset view on logout
+        setCurrentView('dashboard');
+      } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        setUser(session?.user ?? null);
+        if (session?.user) {
+          fetchProfile(session.user.id);
+        }
       }
     });
 
@@ -54,11 +102,17 @@ const App: React.FC = () => {
     };
     fetchData();
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+      window.removeEventListener("unhandledrejection", handleRejection);
+    };
   }, []);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
+    setUser(null);
+    setProfile(null);
+    setCurrentView('dashboard');
   };
 
   const handleNavigate = (view: string) => {
@@ -92,7 +146,7 @@ const App: React.FC = () => {
       {!user ? (
         // GUEST VIEW: Centered Login Panel
         <div className="relative z-10 min-h-screen flex flex-col items-center justify-center p-4">
-          <LoginPanel onSuccess={() => {/* Auth state change handles redirect */}} />
+          <LoginPanel onSuccess={() => {/* Auth state change handles redirect via listener */}} />
         </div>
       ) : (
         // AUTHENTICATED VIEW

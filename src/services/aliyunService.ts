@@ -107,9 +107,12 @@ class AliyunService {
     // 代理地址: /aliyun-api/api/v1/services/aigc/multimodal-generation/generation
     const url = `/aliyun-api/api/v1/services/aigc/multimodal-generation/generation`;
 
-    this.logUsage('qwen-vl-max');
+    // 使用 qwen-vl-max (目前最强版本)
+    const MODEL_NAME = "qwen-vl-max"; 
 
-    console.log("Calling Aliyun VL API via Vercel Proxy...");
+    this.logUsage(MODEL_NAME);
+
+    console.log(`Calling Aliyun VL API (${MODEL_NAME}) via Vercel Proxy...`);
 
     try {
       const response = await fetch(url, {
@@ -120,7 +123,7 @@ class AliyunService {
           'X-DashScope-SSE': 'enable',
         },
         body: JSON.stringify({
-          model: "qwen-vl-max",
+          model: MODEL_NAME,
           input: { messages: messages },
           parameters: { 
             incremental_output: true,

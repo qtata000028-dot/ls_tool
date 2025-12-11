@@ -94,6 +94,7 @@ export const dataService = {
           let width = img.width;
           let height = img.height;
 
+          // Scaling logic
           if (width > maxWidth) {
             height = Math.round((height * maxWidth) / width);
             width = maxWidth;
@@ -102,12 +103,15 @@ export const dataService = {
           canvas.width = width;
           canvas.height = height;
           const ctx = canvas.getContext('2d');
-          ctx?.drawImage(img, 0, 0, width, height);
-          
-          canvas.toBlob((blob) => {
-            if (blob) resolve(blob);
-            else reject(new Error('Image compression failed'));
-          }, 'image/jpeg', quality);
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            canvas.toBlob((blob) => {
+              if (blob) resolve(blob);
+              else reject(new Error('Image compression failed'));
+            }, 'image/jpeg', quality);
+          } else {
+            reject(new Error('Canvas context failed'));
+          }
         };
       };
       reader.onerror = (error) => reject(error);
@@ -116,8 +120,8 @@ export const dataService = {
 
   async uploadAvatar(userId: string, file: File): Promise<string | null> {
     try {
-      // 1. Compress
-      const compressedBlob = await this.compressImage(file);
+      // 1. Compress (Avatars can be small)
+      const compressedBlob = await this.compressImage(file, 300, 0.8);
       const compressedFile = new File([compressedBlob], 'avatar.jpg', { type: 'image/jpeg' });
 
       // 2. Upload to Storage
@@ -152,19 +156,27 @@ export const dataService = {
   // NEW: Upload image for AI analysis
   async uploadAnalysisImage(file: File): Promise<string | null> {
     try {
-      // Compress lightly (we need detail for AI, but not huge files)
-      const compressedBlob = await this.compressImage(file, 1600, 0.85);
+      // ULTIMATE OPTIMIZATION for Vercel Hobby Plan (10s timeout):
+      // Resize to 600px width and 0.5 quality.
+      // This creates a tiny file (~50-80KB) which uploads instantly and downloads instantly by Aliyun.
+      // Qwen-VL handles low-res images very well for general object/text recognition.
+      const compressedBlob = await this.compressImage(file, 600, 0.5);
       const compressedFile = new File([compressedBlob], 'analysis.jpg', { type: 'image/jpeg' });
 
       // Upload to 'ai-vision' bucket
-      // NOTE: Ensure 'ai-vision' bucket exists and is public via SQL
       const fileName = `analysis_${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`;
       
       const { error: uploadError } = await supabase.storage
         .from('ai-vision')
         .upload(fileName, compressedFile);
 
-      if (uploadError) throw uploadError;
+      if (uploadError) {
+         // If token is invalid, this might fail with 401 or 403
+         if (uploadError.message.includes('jwt') || uploadError.message.includes('token')) {
+            throw new Error("会话过期，请刷新页面重新登录");
+         }
+         throw uploadError;
+      }
 
       const { data: { publicUrl } } = supabase.storage
         .from('ai-vision')

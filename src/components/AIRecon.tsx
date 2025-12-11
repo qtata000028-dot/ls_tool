@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowLeft, Upload, Mic, ScanLine, X, Loader2, Play, Pause, AlertTriangle, Sparkles, ChevronUp, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Upload, Mic, ScanLine, X, Loader2, Play, Pause, AlertTriangle, Sparkles, ChevronUp, ChevronDown, StopCircle } from 'lucide-react';
 import { aliyunService, VLMessage } from '../services/aliyunService';
 import { dataService } from '../services/dataService';
 
@@ -50,18 +50,18 @@ const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
           transcript += event.results[i][0].transcript;
         }
         // Update input with latest transcript
-        // Note: For continuous, we might want to append, but replacing with current session transcript is usually safer for logic
-        // To append, we'd need to track previous sessions. For now, replacing current input allows correction.
         if (transcript) {
            setPromptInput(transcript);
         }
       };
 
       recognition.onend = () => {
-        // Only set false if we intended to stop, or handled manually
-        // If it stops automatically due to silence but we wanted continuous, we might need logic to restart
-        // For simplicity, we let it stop and update UI
-        setIsRecording(false);
+        // If it stops but we think we are recording, it might be silence. 
+        // We'll keep the UI state as recording unless explicitly stopped by user logic or error.
+        // However, standard behavior is to restart if continuous.
+        // For simple UI sync, we rely on user clicking stop or hard errors.
+        // If browser forces stop:
+        // setIsRecording(false);
       };
       
       recognition.onerror = (event: any) => {
@@ -75,6 +75,7 @@ const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
     return () => {
       if (synthRef.current) synthRef.current.cancel();
       if (abortControllerRef.current) abortControllerRef.current.abort();
+      if (recognitionRef.current) recognitionRef.current.stop();
     };
   }, []);
 
@@ -113,9 +114,11 @@ const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
     }
 
     if (isRecording) {
+      // STOP
       recognitionRef.current.stop();
       setIsRecording(false);
     } else {
+      // START
       try {
         recognitionRef.current.start();
         setIsRecording(true);
@@ -149,7 +152,7 @@ const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
       const publicUrl = await dataService.uploadAnalysisImage(uploadedFile);
       if (!publicUrl) throw new Error("图片上传失败，请检查网络连接。");
 
-      setStatusText("AI 正在阅读图片 (大图可能需要几秒)...");
+      setStatusText("AI 正在深度分析 (Qwen-VL-Max)...");
       const finalPrompt = promptInput.trim() || "请详细分析这张图片的内容。识别其中的物体、文字、场景以及任何值得注意的细节。";
       
       const messages: VLMessage[] = [
@@ -172,7 +175,7 @@ const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
            setIsAnalyzing(false);
            setStatusText("");
         }
-      }, 45000); 
+      }, 60000); // Increased timeout for Max model
 
       await aliyunService.chatVLStream(messages, (chunk) => {
         if (!hasReceivedFirstToken) {
@@ -297,7 +300,7 @@ const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
          )}
       </div>
 
-      {/* 2. FLOATING ACTION BAR (Global - Mobile Optimized) */}
+      {/* 2. FLOATING ACTION BAR (Mobile Optimized - 2 Rows) */}
       <div 
         className={`
           absolute z-50 transition-all duration-500 ease-in-out px-4
@@ -314,42 +317,45 @@ const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
           }
         `}
       >
-         <div className="w-full max-w-2xl mx-auto p-3 md:p-3 rounded-2xl bg-[#0F1629]/95 border border-white/10 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] flex flex-col md:flex-row gap-3">
+         <div className="w-full max-w-2xl mx-auto p-3 rounded-2xl bg-[#0F1629]/95 border border-white/10 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] flex flex-col gap-3">
              
-             {/* Top Row: Back + Input */}
+             {/* Row 1: Back + Input + Mic */}
              <div className="flex items-center gap-3 w-full">
-               <button onClick={onBack} className="p-2.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-xl transition-colors shrink-0 bg-black/20 md:bg-transparent">
+               <button onClick={onBack} className="p-3 text-slate-400 hover:text-white hover:bg-white/10 rounded-xl transition-colors shrink-0 bg-black/20 md:bg-transparent">
                   <ArrowLeft size={20} />
                </button>
                
                <div className="h-6 w-[1px] bg-white/10 mx-1 shrink-0 hidden md:block"></div>
 
                {/* Input Area */}
-               <div className={`flex-1 flex items-center bg-black/40 rounded-xl border px-3 py-2.5 transition-all duration-300 ${isRecording ? 'border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.2)]' : 'border-white/10 focus-within:border-indigo-500/50'}`}>
+               <div className={`flex-1 flex items-center bg-black/40 rounded-xl border px-3 py-2.5 transition-all duration-300 ${isRecording ? 'border-red-500/80 shadow-[0_0_15px_rgba(239,68,68,0.4)] bg-red-950/20' : 'border-white/10 focus-within:border-indigo-500/50'}`}>
                   <input 
                     type="text" 
                     value={promptInput}
                     onChange={(e) => setPromptInput(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
-                    placeholder={isRecording ? "正在聆听... (点击麦克风停止)" : "输入指令..."}
+                    placeholder={isRecording ? "正在听... (再次点击麦克风结束)" : "输入指令或语音..."}
                     className="flex-1 bg-transparent border-none text-sm text-white placeholder-slate-500 focus:ring-0 px-0 min-w-0"
                     disabled={isAnalyzing}
                   />
                   <button 
                      onClick={toggleRecording}
-                     className={`p-1.5 rounded-lg transition-all ml-2 shrink-0 ${isRecording ? 'text-red-400 bg-red-500/20 animate-pulse scale-110' : 'text-slate-400 hover:text-white hover:bg-white/10'}`}
-                     title={isRecording ? "点击停止录音" : "点击开始录音"}
+                     className={`p-2 rounded-lg transition-all ml-2 shrink-0 flex items-center justify-center ${
+                       isRecording 
+                        ? 'text-white bg-red-500 animate-pulse' 
+                        : 'text-slate-400 hover:text-white hover:bg-white/10'
+                     }`}
                   >
-                     <Mic size={20} />
+                     {isRecording ? <StopCircle size={20} className="fill-current"/> : <Mic size={20} />}
                   </button>
                </div>
              </div>
 
-             {/* Bottom Row / Side: Analyze Button */}
+             {/* Row 2: Big Analyze Button */}
              <button 
                 onClick={handleAnalyze}
                 disabled={!uploadedFile || isAnalyzing}
-                className={`flex items-center justify-center gap-2 px-6 py-3 md:py-2.5 rounded-xl font-bold text-sm transition-all shrink-0 w-full md:w-auto ${
+                className={`flex items-center justify-center gap-2 w-full px-6 py-4 md:py-3 rounded-xl font-bold text-base transition-all ${
                    !uploadedFile 
                      ? 'bg-slate-800 text-slate-500 cursor-not-allowed' 
                      : isAnalyzing 
@@ -358,7 +364,7 @@ const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
                 }`}
              >
                 {isAnalyzing ? <Loader2 size={20} className="animate-spin" /> : <Sparkles size={20} />}
-                <span>{isAnalyzing ? '正在分析...' : '开始识别'}</span>
+                <span>{isAnalyzing ? 'AI 深度分析中...' : '开始识别'}</span>
              </button>
          </div>
       </div>
