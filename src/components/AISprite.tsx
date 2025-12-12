@@ -15,6 +15,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
   const recognitionRef = useRef<any>(null);
   const feedbackTimeoutRef = useRef<number | null>(null);
   const synthRef = useRef<SpeechSynthesis>(window.speechSynthesis);
+  const isListeningRef = useRef(false);
 
   // Avoid repeated auto-start attempts
   const autoListenStartedRef = useRef(false);
@@ -58,7 +59,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
 
     recognition.onend = () => {
       // Auto-restart if it was supposed to be listening (Chrome stops it sometimes)
-      if (isListening) {
+      if (isListeningRef.current) {
           try { recognition.start(); } catch (e) { /* ignore already started */ }
       }
     };
@@ -88,6 +89,10 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
        if (recognitionRef.current) recognitionRef.current.stop();
        if (wakeWordTimerRef.current) clearTimeout(wakeWordTimerRef.current);
     };
+  }, []);
+
+  useEffect(() => {
+    isListeningRef.current = isListening;
   }, [isListening]);
 
   // Auto-attempt to start listening in secure preview contexts so the wake word works immediately
@@ -96,8 +101,11 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       if (autoListenStartedRef.current || !recognitionRef.current) return;
       autoListenStartedRef.current = true;
 
-      if (!window.isSecureContext) return; // Browser blocks mic on non-secure contexts
-      if (!navigator.mediaDevices?.getUserMedia) return; // Skip if media devices are unavailable
+      // 即便非 HTTPS 也尝试启动，让本地/内网环境能用
+      if (!navigator.mediaDevices?.getUserMedia) {
+        showFeedback('当前环境无法访问麦克风');
+        return;
+      }
 
       try {
         await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -107,6 +115,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
         speak('我在，请直接说小朗小朗唤醒我，然后下达命令');
       } catch (err) {
         console.warn('自动开启语音失败/被拒绝', err);
+        showFeedback('自动开启语音失败，请手动点击麦克风');
       }
     };
 
@@ -221,25 +230,21 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
         return;
     }
 
-    // Check 2: Secure Context (HTTPS or Localhost)
-    if (!window.isSecureContext) {
-        showFeedback("语音需 HTTPS 或 Localhost 环境");
-        speak("安全限制，无法在非安全网页开启麦克风");
-        return;
-    }
-
     if (isListening) {
         recognitionRef.current.stop();
         setIsListening(false);
+        isListeningRef.current = false;
         showFeedback("语音已关闭");
     } else {
         try {
             recognitionRef.current.start();
             setIsListening(true);
+            isListeningRef.current = true;
             showFeedback("我在听，请说“小朗”...");
             speak("语音助手已就绪");
         } catch (e) {
             console.error(e);
+            showFeedback("语音启动失败，请确认麦克风权限");
         }
     }
   };
