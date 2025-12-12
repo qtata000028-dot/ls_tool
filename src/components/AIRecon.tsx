@@ -150,8 +150,11 @@ const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
   const synthRef = useRef<SpeechSynthesis>(window.speechSynthesis);
   const resultEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  
+  // Track uploaded image path for cleanup
+  const uploadedImagePathRef = useRef<string | null>(null);
 
-  // --- Effects ---
+  // --- Cleanup on Unmount ---
   useEffect(() => {
     // Setup Speech Recognition
     if ('webkitSpeechRecognition' in window) {
@@ -181,6 +184,11 @@ const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
       if (synthRef.current) synthRef.current.cancel();
       if (abortControllerRef.current) abortControllerRef.current.abort();
       if (recognitionRef.current) recognitionRef.current.stop();
+      
+      // CRITICAL: Delete the image from DB when component unmounts
+      if (uploadedImagePathRef.current) {
+          dataService.deleteAnalysisImage(uploadedImagePathRef.current);
+      }
     };
   }, []);
 
@@ -196,14 +204,27 @@ const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
     }
   }, [analysisText, errorMsg, isDesktop]);
 
+  // --- Cleanup Helper ---
+  const cleanupOldImage = async () => {
+      if (uploadedImagePathRef.current) {
+          await dataService.deleteAnalysisImage(uploadedImagePathRef.current);
+          uploadedImagePathRef.current = null;
+      }
+  };
+
   // --- Handlers ---
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      // Clean up previous image if exists
+      await cleanupOldImage();
+
       setUploadedFile(file);
       const reader = new FileReader();
       reader.onload = (e) => setImagePreview(e.target?.result as string);
       reader.readAsDataURL(file);
+      
+      // Reset States
       setAnalysisText(''); 
       setErrorMsg(null);
       stopAudio();
@@ -249,10 +270,19 @@ const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
     abortControllerRef.current = new AbortController();
 
     try {
-      setStatusText("正在压缩并上传图片...");
-      const publicUrl = await dataService.uploadAnalysisImage(uploadedFile);
-      if (!publicUrl) throw new Error("图片上传失败，请检查网络连接。");
+      // 1. Clean up old image if any (just in case)
+      await cleanupOldImage();
 
+      // 2. Upload New Image
+      setStatusText("正在压缩并上传图片...");
+      const result = await dataService.uploadAnalysisImage(uploadedFile);
+      
+      if (!result || !result.publicUrl) throw new Error("图片上传失败，请检查网络连接。");
+      
+      // Track the new path for cleanup later
+      uploadedImagePathRef.current = result.path;
+
+      // 3. Start Analysis
       setStatusText("AI 正在深度分析 (Qwen-VL-Max)...");
       const finalPrompt = promptInput.trim() || "请详细分析这张图片的内容。识别其中的物体、文字、场景以及任何值得注意的细节。";
       
@@ -260,7 +290,7 @@ const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
         {
           role: 'user',
           content: [
-            { image: publicUrl },
+            { image: result.publicUrl },
             { text: finalPrompt }
           ]
         }
@@ -331,7 +361,10 @@ const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
     setIsPlayingAudio(false);
   };
 
-  const clearAll = () => {
+  const clearAll = async () => {
+    // Explicit cleanup when user clicks Close
+    await cleanupOldImage();
+    
     setImagePreview(null);
     setUploadedFile(null);
     setAnalysisText('');
@@ -342,6 +375,11 @@ const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
     setIsResultExpanded(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (abortControllerRef.current) abortControllerRef.current.abort();
+  };
+  
+  const handleBack = async () => {
+      await cleanupOldImage();
+      onBack();
   };
 
   // --- Main Render ---
@@ -399,7 +437,7 @@ const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
          
          {/* Desktop Back Button (Floating on Image) */}
          {isDesktop && (
-            <button onClick={onBack} className="absolute top-6 left-6 p-2 text-slate-400 hover:text-white bg-black/30 rounded-lg backdrop-blur-md">
+            <button onClick={handleBack} className="absolute top-6 left-6 p-2 text-slate-400 hover:text-white bg-black/30 rounded-lg backdrop-blur-md">
                 <ArrowLeft size={20} />
             </button>
          )}
@@ -409,7 +447,7 @@ const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
             <div className={`absolute left-0 right-0 z-50 px-4 transition-all duration-300 ${isResultExpanded ? 'bottom-4 opacity-0 pointer-events-none' : 'bottom-6 opacity-100'}`}>
                 <div className="bg-[#0F1629]/90 backdrop-blur-xl p-4 rounded-2xl border border-white/10 shadow-2xl">
                     <div className="flex items-center gap-3 mb-3">
-                        <button onClick={onBack} className="p-2 text-slate-400"><ArrowLeft size={20}/></button>
+                        <button onClick={handleBack} className="p-2 text-slate-400"><ArrowLeft size={20}/></button>
                         <div className="h-4 w-[1px] bg-white/10"></div>
                         <span className="text-sm font-bold text-white">AI 视觉分析</span>
                     </div>
