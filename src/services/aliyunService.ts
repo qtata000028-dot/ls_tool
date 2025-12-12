@@ -41,6 +41,53 @@ class AliyunService {
     return config as AliyunConfig;
   }
 
+  /**
+   * 极速语音转写 (使用阿里云最新流式识别接口)
+   * 备注：通过 Vite/Vercel 代理 /aliyun-api 转发，无需暴露真实域名
+   */
+  async fastSpeechToText(
+    audioBlob: Blob,
+    onPartial: (text: string) => void,
+    onFinal: (text: string) => void
+  ) {
+    const config = await this.getConfig();
+    // 官方建议使用 stream/v1/audio/recognition，模型取默认极速版本
+    const url = `/aliyun-api/stream/v1/audio/recognition`;
+
+    this.logUsage('qwen-asr-pro');
+
+    const form = new FormData();
+    form.append('file', audioBlob, 'speech.webm');
+    form.append('model', 'paraformer-2');
+    form.append('format', 'wav');
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${config.apiKey}`,
+        },
+        body: form,
+      });
+
+      if (!response.ok) await this.handleError(response);
+      if (!response.body) throw new Error('No response body');
+
+      await this.processStream(response.body, (json) => {
+        const text = json?.output?.text || json?.result || json?.payload?.result || '';
+        const isFinal = json?.output?.completed === true || json?.is_final === true;
+
+        if (text) {
+          onPartial(text);
+          if (isFinal) onFinal(text);
+        }
+      });
+    } catch (error) {
+      console.error('Aliyun ASR Error:', error);
+      throw error;
+    }
+  }
+
   private async logUsage(model: string) {
     try {
       const { data: { user } } = await supabase.auth.getUser();

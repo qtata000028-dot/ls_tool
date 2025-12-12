@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Bot, Mic, Send, X, Sparkles, MicOff, Zap, BarChart3, AlertTriangle } from 'lucide-react';
+import { Bot, Mic, Send, X, Sparkles, MicOff, Zap, BarChart3, AlertTriangle, Gauge } from 'lucide-react';
+import { aliyunService } from '../services/aliyunService';
 
 interface AISpriteProps {
   onNavigate: (view: string, params?: any) => void;
@@ -8,110 +9,113 @@ interface AISpriteProps {
 const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [capturedSpeech, setCapturedSpeech] = useState('');
   const [inputText, setInputText] = useState('');
   const [feedback, setFeedback] = useState('');
   const [isWakeWordDetected, setIsWakeWordDetected] = useState(false);
-  
+
   const recognitionRef = useRef<any>(null);
+  const transcriptRef = useRef('');
   const feedbackTimeoutRef = useRef<number | null>(null);
   const synthRef = useRef<SpeechSynthesis>(window.speechSynthesis);
+  const isListeningRef = useRef(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
-  // Avoid repeated auto-start attempts
-  const autoListenStartedRef = useRef(false);
-  
-  // Use a Ref for wake word state to avoid closure staleness in onresult callback
-  const isWakeWordActiveRef = useRef(false);
-  // Timer to auto-reset wake word state if no command follows
-  const wakeWordTimerRef = useRef<number | null>(null);
+  const [isCloudBusy, setIsCloudBusy] = useState(false);
+  const [recorderReady, setRecorderReady] = useState(!!window.MediaRecorder);
 
-  // Initialize Speech Recognition
-  useEffect(() => {
-    // Check for browser support
-    if (!('webkitSpeechRecognition' in window)) {
-        return;
-    }
+  const buildRecognizer = () => {
+    if (!('webkitSpeechRecognition' in window)) return null;
 
     const SpeechRecognition = (window as any).webkitSpeechRecognition;
     const recognition = new SpeechRecognition();
     recognition.continuous = true;
-    recognition.interimResults = true; // CRITICAL: Allow partial results for instant wake word
+    recognition.interimResults = true;
     recognition.lang = 'zh-CN';
 
-    recognition.onresult = (event: any) => {
-      let interimTranscript = '';
-      let finalTranscript = '';
-
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            finalTranscript += event.results[i][0].transcript;
-          } else {
-            interimTranscript += event.results[i][0].transcript;
-          }
-      }
-
-      // 1. Check Interim (Fastest reaction for wake word)
-      if (interimTranscript) handleVoiceCommand(interimTranscript, true);
-      
-      // 2. Check Final (For full commands)
-      if (finalTranscript) handleVoiceCommand(finalTranscript, false);
+    recognition.onstart = () => {
+      setIsListening(true);
+      isListeningRef.current = true;
+      setIsWakeWordDetected(true);
     };
 
     recognition.onend = () => {
-      // Auto-restart if it was supposed to be listening (Chrome stops it sometimes)
-      if (isListening) {
-          try { recognition.start(); } catch (e) { /* ignore already started */ }
+      if (isListeningRef.current) {
+        // If the engine stopped unexpectedly, surface it so the user can retry
+        setIsListening(false);
+        isListeningRef.current = false;
+        if (!transcriptRef.current) showFeedback('麦克风已断开，请重试');
       }
     };
 
+    recognition.onresult = (event: any) => {
+      const cleanTranscript = (text: string) => text.replace(/\s+/g, ' ').trim();
+      let nextFinal = transcriptRef.current || '';
+      let interim = '';
+
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        const result = event.results[i];
+        const segment = cleanTranscript(result[0].transcript || '');
+
+        if (!segment) continue;
+
+        if (result.isFinal) {
+          const needsSpace = nextFinal && !nextFinal.endsWith(' ');
+          const willAppend = !nextFinal.endsWith(segment);
+          if (willAppend) nextFinal = cleanTranscript(`${nextFinal}${needsSpace ? ' ' : ''}${segment}`);
+        } else {
+          interim = segment;
+        }
+      }
+
+      const combined = cleanTranscript(`${nextFinal} ${interim}`);
+      transcriptRef.current = combined;
+      setCapturedSpeech(combined);
+    };
+
     recognition.onerror = (event: any) => {
-      console.warn("Speech Error Code:", event.error);
-      
+      console.warn('Speech Error Code:', event.error);
+
+      setIsListening(false);
+      isListeningRef.current = false;
+
       if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-          setIsListening(false);
-          // Distinguish between user denial and insecure context block
-          if (!window.isSecureContext) {
-              showFeedback("环境不安全: 麦克风需 HTTPS");
-              speak("请使用 HTTPS 或本地环境");
-          } else {
-              showFeedback("麦克风权限被拒绝");
-          }
-      } else if (event.error === 'no-speech') {
-          // Ignore no-speech errors, just keep listening
+        if (!window.isSecureContext) {
+          showFeedback('当前环境不安全：麦克风需 HTTPS 或本地预览');
+          speak('请使用 HTTPS 或本地环境');
+        } else {
+          showFeedback('麦克风权限被拒绝');
+        }
       } else if (event.error === 'network') {
-          showFeedback("语音识别网络错误");
+        showFeedback('语音识别网络错误');
+      } else {
+        showFeedback('语音识别异常，请重试');
       }
     };
 
     recognitionRef.current = recognition;
-    
+    return recognition;
+  };
+
+  // Initialize Speech Recognition
+  useEffect(() => {
+    buildRecognizer();
     return () => {
-       if (recognitionRef.current) recognitionRef.current.stop();
-       if (wakeWordTimerRef.current) clearTimeout(wakeWordTimerRef.current);
+       recognitionRef.current?.stop();
+       mediaRecorderRef.current?.stop();
     };
+  }, []);
+
+  useEffect(() => {
+    isListeningRef.current = isListening;
   }, [isListening]);
 
-  // Auto-attempt to start listening in secure preview contexts so the wake word works immediately
   useEffect(() => {
-    const enableAutoListening = async () => {
-      if (autoListenStartedRef.current || !recognitionRef.current) return;
-      autoListenStartedRef.current = true;
+    transcriptRef.current = capturedSpeech;
+  }, [capturedSpeech]);
 
-      if (!window.isSecureContext) return; // Browser blocks mic on non-secure contexts
-      if (!navigator.mediaDevices?.getUserMedia) return; // Skip if media devices are unavailable
-
-      try {
-        await navigator.mediaDevices.getUserMedia({ audio: true });
-        recognitionRef.current.start();
-        setIsListening(true);
-        showFeedback('已自动开启监听，对我说“两遍小朗”试试');
-        speak('我在，请直接说小朗小朗唤醒我，然后下达命令');
-      } catch (err) {
-        console.warn('自动开启语音失败/被拒绝', err);
-      }
-    };
-
-    enableAutoListening();
-  }, []);
+  // No auto-start; manual press-to-talk is now the only entry point
 
   // --- TTS Helper ---
   const speak = (text: string) => {
@@ -130,117 +134,221 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     }, 4000);
   };
 
-  const activateWakeWord = () => {
-      isWakeWordActiveRef.current = true;
-      setIsWakeWordDetected(true);
-      
-      // Auto-reset after 8 seconds of silence
-      if (wakeWordTimerRef.current) clearTimeout(wakeWordTimerRef.current);
-      wakeWordTimerRef.current = window.setTimeout(() => {
-          isWakeWordActiveRef.current = false;
-          setIsWakeWordDetected(false);
-      }, 8000);
+  const wakeWords = ['小朗', '小浪', '小狼', '小郎', '小廊', 'xiaolang'];
+
+  const extractWakeWord = (raw: string) => {
+    const normalized = raw.replace(/\s+/g, '').toLowerCase();
+    const matched = wakeWords.some((w) => normalized.includes(w.toLowerCase()));
+
+    if (!matched) return { matched: false, remainder: raw.trim() };
+
+    let remainder = raw;
+    wakeWords.forEach((w) => {
+      const pattern = new RegExp(w, 'ig');
+      remainder = remainder.replace(pattern, '');
+    });
+
+    return { matched: true, remainder: remainder.trim() };
   };
 
-  const handleVoiceCommand = (text: string, isInterim: boolean) => {
-    const lowerText = text.toLowerCase();
-    
-    // 1. Detect Wake Word (Even in interim results)
-    const isWakeWord = lowerText.includes('小朗') || lowerText.includes('小狼') || lowerText.includes('小兰');
+  const handleVoiceCommand = (text: string) => {
+    const { matched, remainder } = extractWakeWord(text);
+    const lowerText = (remainder || text).toLowerCase();
 
-    if (isWakeWord) {
-        // Only trigger if not recently triggered
-        if (!isWakeWordActiveRef.current) {
-            activateWakeWord();
-            speak("我在");
-            showFeedback("我在，请吩咐...");
-        } else {
-            // Keep alive
-            activateWakeWord();
-        }
+    if (matched && !remainder) {
+      setIsWakeWordDetected(true);
+      showFeedback('我在，请继续说指令');
+      speak('我在，请继续说指令');
+      return;
     }
 
-    // If it's just the wake word in interim, stop here to avoid processing partial commands repeatedly
-    if (isInterim && lowerText.length < 5) return;
+    let commandExecuted = false;
 
-    // 2. Process Commands (Only if panel is open OR wake word is active)
-    if (isOpen || isWakeWordActiveRef.current) {
-        
-        let commandExecuted = false;
+    if ((lowerText.includes('开发平台') || lowerText.includes('工具') || lowerText.includes('员工')) &&
+        (lowerText.includes('分析') || lowerText.includes('比例') || lowerText.includes('多少人') || lowerText.includes('统计') || lowerText.includes('学历') || lowerText.includes('学位'))) {
+        commandExecuted = true;
+        speak(matched ? '好的，我在，正在生成数据分析报告' : '好的，正在生成数据分析报告');
+        showFeedback("正在生成报告...");
+        onNavigate('tools', { mode: 'analysis', query: lowerText });
+    }
+    else if (lowerText.includes('知识库')) {
+        commandExecuted = true;
+        speak(matched ? '我在，正在打开知识库' : '正在打开知识库');
+        showFeedback("正在打开知识库...");
+        onNavigate('knowledge');
+    } else if (lowerText.includes('识图') || lowerText.includes('视觉')) {
+        commandExecuted = true;
+        speak(matched ? '我在，正在启动视觉分析' : '正在启动视觉分析');
+        showFeedback("正在打开 AI 识图...");
+        onNavigate('vision');
+    } else if (lowerText.includes('主页') || lowerText.includes('返回')) {
+        commandExecuted = true;
+        speak(matched ? '好的，马上返回主页' : '正在返回主页');
+        onNavigate('dashboard');
+    }
 
-        // Complex Command: "Open tools and analyze gender ratio"
-        // Improved keyword matching for "Degree/Education"
-        if ((lowerText.includes('开发平台') || lowerText.includes('工具') || lowerText.includes('员工')) && 
-            (lowerText.includes('分析') || lowerText.includes('比例') || lowerText.includes('多少人') || lowerText.includes('统计') || lowerText.includes('学历') || lowerText.includes('学位'))) {
-            
-            // Only execute on Final results or long enough interim results to avoid false triggers
-            if (!isInterim || lowerText.length > 8) {
-                commandExecuted = true;
-                speak("好的，正在生成数据分析报告");
-                showFeedback("正在生成报告...");
-                onNavigate('tools', { mode: 'analysis', query: lowerText }); 
-                
-                // Reset wake word to prevent double execution
-                isWakeWordActiveRef.current = false;
-                setIsWakeWordDetected(false);
-            }
-        }
-        // Standard Navigation
-        else if (lowerText.includes('知识库') && !isInterim) {
-            commandExecuted = true;
-            speak("正在打开知识库");
-            showFeedback("正在打开知识库...");
-            onNavigate('knowledge');
-        } else if ((lowerText.includes('识图') || lowerText.includes('视觉')) && !isInterim) {
-            commandExecuted = true;
-            speak("正在启动视觉分析");
-            showFeedback("正在打开 AI 识图...");
-            onNavigate('vision');
-        } else if ((lowerText.includes('主页') || lowerText.includes('返回')) && !isInterim) {
-            commandExecuted = true;
-            speak("正在返回主页");
-            onNavigate('dashboard');
-        } 
+    if (matched && !commandExecuted) {
+      showFeedback('我在，继续说具体指令');
+      speak('我在，继续说具体指令');
+      return;
+    }
+
+    if (!commandExecuted) {
+        showFeedback('未识别到指令，请再试一次');
     }
   };
 
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputText.trim()) return;
-    isWakeWordActiveRef.current = true; 
-    handleVoiceCommand(inputText, false);
+    handleVoiceCommand(inputText);
     setInputText('');
   };
 
-  const toggleListening = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    
-    // Check 1: Browser Support
-    if (!recognitionRef.current) {
-        showFeedback("浏览器不支持语音 (请使用 Chrome)");
-        return;
+  const transcribeWithAliyun = async (audioBlob: Blob) => {
+    setIsCloudBusy(true);
+    setFeedback('云端极速识别中...');
+
+    try {
+      let finalText = '';
+
+      await aliyunService.fastSpeechToText(
+        audioBlob,
+        (partial) => {
+          const clean = partial.replace(/\s+/g, ' ').trim();
+          transcriptRef.current = clean;
+          setCapturedSpeech(clean);
+        },
+        (finalResult) => {
+          finalText = finalResult.trim();
+        }
+      );
+
+      const text = finalText || transcriptRef.current;
+      if (text) {
+        handleVoiceCommand(text);
+      } else {
+        showFeedback('未捕获到语音内容');
+      }
+    } catch (err: any) {
+      console.error(err);
+      showFeedback('云端识别失败，已回退本地识别');
+      recognitionRef.current?.stop?.();
+      recognitionRef.current = buildRecognizer();
+      recognitionRef.current?.start?.();
+    } finally {
+      setIsCloudBusy(false);
+      setCapturedSpeech('');
+      transcriptRef.current = '';
+    }
+  };
+
+  const stopRecording = () => {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder) return null;
+    try {
+      recorder.stop();
+    } catch (err) {
+      console.warn('Recorder stop error', err);
+    }
+    setIsListening(false);
+    setIsWakeWordDetected(false);
+    isListeningRef.current = false;
+    return recorder;
+  };
+
+  const startRecording = async () => {
+    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+      setRecorderReady(false);
+      return false;
     }
 
-    // Check 2: Secure Context (HTTPS or Localhost)
-    if (!window.isSecureContext) {
-        showFeedback("语音需 HTTPS 或 Localhost 环境");
-        speak("安全限制，无法在非安全网页开启麦克风");
-        return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream, {
+        mimeType: 'audio/webm',
+        audioBitsPerSecond: 128000,
+      });
+
+      audioChunksRef.current = [];
+
+      recorder.ondataavailable = (evt) => {
+        if (evt.data.size > 0) audioChunksRef.current.push(evt.data);
+      };
+
+      recorder.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        if (blob.size > 0) {
+          transcribeWithAliyun(blob);
+        }
+      };
+
+      recorder.start();
+      mediaRecorderRef.current = recorder;
+      setIsListening(true);
+      isListeningRef.current = true;
+      setIsWakeWordDetected(true);
+      showFeedback('正在录音，再次点击即可识别');
+      speak('开始录音，请说出指令，完成后再次点击执行');
+      return true;
+    } catch (err: any) {
+      console.error(err);
+      showFeedback('麦克风不可用，请检查权限');
+      setRecorderReady(false);
+      return false;
+    }
+  };
+
+  const toggleListening = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+
+    // 优先使用云端极速 ASR，降级到浏览器识别
+    if (isListening && mediaRecorderRef.current) {
+      stopRecording();
+      return;
+    }
+
+    if (!isListening && recorderReady) {
+      const started = await startRecording();
+      if (started) return;
+    }
+
+    const recognizer = recognitionRef.current || buildRecognizer();
+    if (!recognizer) {
+      showFeedback('浏览器不支持语音 (请使用 Chrome)');
+      return;
     }
 
     if (isListening) {
-        recognitionRef.current.stop();
-        setIsListening(false);
-        showFeedback("语音已关闭");
+      recognizer.stop();
+      setIsListening(false);
+      isListeningRef.current = false;
+
+      const finalText = capturedSpeech.trim();
+      setCapturedSpeech('');
+      setIsWakeWordDetected(false);
+
+      if (finalText) {
+        handleVoiceCommand(finalText);
+      } else {
+        showFeedback('未捕获到语音内容');
+      }
     } else {
-        try {
-            recognitionRef.current.start();
-            setIsListening(true);
-            showFeedback("我在听，请说“小朗”...");
-            speak("语音助手已就绪");
-        } catch (e) {
-            console.error(e);
-        }
+      try {
+        setCapturedSpeech('');
+        setIsWakeWordDetected(true);
+        navigator.mediaDevices?.getUserMedia?.({ audio: true }).catch(() => {
+          showFeedback('无法访问麦克风，请检查权限');
+        });
+        recognizer.start();
+        showFeedback('按下即可说，再按执行');
+        speak('开始录音，请说出指令，完成后再次点击执行');
+      } catch (err) {
+        console.error(err);
+        showFeedback('语音启动失败，请确认麦克风权限');
+        recognitionRef.current = null;
+      }
     }
   };
 
@@ -288,9 +396,14 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
                    </button>
                 </form>
 
-                 <div className="flex items-center gap-2 text-[10px] text-slate-400 bg-white/5 border border-white/5 rounded-xl px-3 py-2">
-                    <div className={`w-2 h-2 rounded-full ${isListening ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}`}></div>
-                    <span className="font-medium text-white/70">呼唤“小朗小朗”我会回答“我在”</span>
+                 <div className="flex items-center justify-between gap-2 text-[10px] text-slate-400 bg-white/5 border border-white/5 rounded-xl px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-2 h-2 rounded-full ${isListening ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}`}></div>
+                      <span className="font-medium text-white/70">按下开始录音，再按执行指令</span>
+                    </div>
+                    <span className="flex items-center gap-1 text-[10px] px-2 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-200">
+                      <Gauge size={10} /> 极速ASR
+                    </span>
                  </div>
 
                  <div className="grid grid-cols-2 gap-2">
@@ -303,15 +416,15 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
                  </div>
               </div>
 
-              <div 
-                 onClick={toggleListening}
-                 className={`p-2 border-t border-white/5 flex items-center justify-center gap-2 cursor-pointer transition-colors ${isListening ? 'bg-blue-500/20 text-blue-300' : 'hover:bg-white/5 text-slate-400'}`}
-              >
-                 {isListening ? <Mic size={14} className="animate-pulse" /> : <MicOff size={14} />}
-                 <span className="text-[10px] font-medium">
-                    {isListening ? "正在监听..." : "点击开启语音唤醒"}
-                 </span>
-              </div>
+                 <div
+                    onClick={toggleListening}
+                    className={`p-2 border-t border-white/5 flex items-center justify-center gap-2 cursor-pointer transition-colors ${isListening ? 'bg-blue-500/20 text-blue-300' : 'hover:bg-white/5 text-slate-400'}`}
+                 >
+                    {isListening ? <Mic size={14} className="animate-pulse" /> : <MicOff size={14} />}
+                    <span className="text-[10px] font-medium">
+                    {isListening ? "正在录音，完成后再按一次" : "按下录音 / 再按执行"}
+                    </span>
+                 </div>
            </div>
         </div>
       )}
