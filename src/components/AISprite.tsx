@@ -9,12 +9,15 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [inputText, setInputText] = useState('');
-  const [feedback, setFeedback] = useState(''); 
+  const [feedback, setFeedback] = useState('');
   const [isWakeWordDetected, setIsWakeWordDetected] = useState(false);
   
   const recognitionRef = useRef<any>(null);
   const feedbackTimeoutRef = useRef<number | null>(null);
   const synthRef = useRef<SpeechSynthesis>(window.speechSynthesis);
+
+  // Avoid repeated auto-start attempts
+  const autoListenStartedRef = useRef(false);
   
   // Use a Ref for wake word state to avoid closure staleness in onresult callback
   const isWakeWordActiveRef = useRef(false);
@@ -85,7 +88,30 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
        if (recognitionRef.current) recognitionRef.current.stop();
        if (wakeWordTimerRef.current) clearTimeout(wakeWordTimerRef.current);
     };
-  }, [isListening]); 
+  }, [isListening]);
+
+  // Auto-attempt to start listening in secure preview contexts so the wake word works immediately
+  useEffect(() => {
+    const enableAutoListening = async () => {
+      if (autoListenStartedRef.current || !recognitionRef.current) return;
+      autoListenStartedRef.current = true;
+
+      if (!window.isSecureContext) return; // Browser blocks mic on non-secure contexts
+      if (!navigator.mediaDevices?.getUserMedia) return; // Skip if media devices are unavailable
+
+      try {
+        await navigator.mediaDevices.getUserMedia({ audio: true });
+        recognitionRef.current.start();
+        setIsListening(true);
+        showFeedback('已自动开启监听，对我说“两遍小朗”试试');
+        speak('我在，请直接说小朗小朗唤醒我，然后下达命令');
+      } catch (err) {
+        console.warn('自动开启语音失败/被拒绝', err);
+      }
+    };
+
+    enableAutoListening();
+  }, []);
 
   // --- TTS Helper ---
   const speak = (text: string) => {
@@ -248,19 +274,24 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
               </div>
               
               <div className="p-3 space-y-3">
-                 <form onSubmit={handleManualSubmit} className="relative">
-                    <input 
-                       autoFocus
+                <form onSubmit={handleManualSubmit} className="relative">
+                   <input
+                      autoFocus
                        type="text" 
                        value={inputText}
                        onChange={(e) => setInputText(e.target.value)}
                        placeholder="输入指令 (如: 分析本科生占比)..."
                        className="w-full bg-black/40 border border-white/10 rounded-xl pl-3 pr-9 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500/50"
                     />
-                    <button type="submit" className="absolute right-2 top-1/2 -translate-y-1/2 text-blue-400 hover:text-blue-300">
-                       <Send size={14} />
-                    </button>
-                 </form>
+                   <button type="submit" className="absolute right-2 top-1/2 -translate-y-1/2 text-blue-400 hover:text-blue-300">
+                      <Send size={14} />
+                   </button>
+                </form>
+
+                 <div className="flex items-center gap-2 text-[10px] text-slate-400 bg-white/5 border border-white/5 rounded-xl px-3 py-2">
+                    <div className={`w-2 h-2 rounded-full ${isListening ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}`}></div>
+                    <span className="font-medium text-white/70">呼唤“小朗小朗”我会回答“我在”</span>
+                 </div>
 
                  <div className="grid grid-cols-2 gap-2">
                     <button onClick={() => { onNavigate('tools', { mode: 'analysis', query: '分析一下现在的学历分布情况' }); speak("正在为您分析学历数据"); }} className="text-[10px] bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/30 rounded-lg py-2 text-indigo-200 transition-colors flex items-center justify-center gap-1">
