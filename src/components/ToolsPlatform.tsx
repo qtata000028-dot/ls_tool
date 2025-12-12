@@ -247,23 +247,37 @@ const ToolsPlatform: React.FC<ToolsPlatformProps> = ({ onBack, aiParams }) => {
 
       try {
         // Construct Context
-        const schemaSample = {
-            P_emp_sex: "男/女",
-            Departmentid: "ID(Int)",
-            P_emp_Status: "正式/试用/离职"
+        // CRITICAL FIX: Providing FULL schema to AI so it knows about 'p_emp_degree' (Education)
+        const schemaFull = {
+            employeename: "员工姓名",
+            P_emp_no: "工号 (ID)",
+            Departmentid: "部门ID (关联表)",
+            P_emp_sex: "性别 (男/女)",
+            p_emp_phone: "电话",
+            P_emp_Status: "在职状态 (正式/试用/离职)",
+            p_emp_degree: "学历/学位 (本科/大专/硕士...)", // Explicitly added for correct mapping
+            P_emp_workJoindt: "入职时间 (YYYY-MM-DD)"
         };
-        const deptMappingSample = currentDepts.slice(0, 8).map(d => `${d.Departmentid}:${d.departmentname}`).join(",");
+        const deptMappingSample = currentDepts.slice(0, 15).map(d => `${d.Departmentid}:${d.departmentname}`).join(",");
 
         const systemPrompt = `
-Context: HR Dashboard. Data Schema: ${JSON.stringify(schemaSample)}. Depts: ${deptMappingSample}.
+Context: HR Dashboard Data. 
+Data Schema (Column -> Meaning): ${JSON.stringify(schemaFull)}.
+Department IDs: ${deptMappingSample}.
+
 Query: "${userQuery}"
-Task: Return VALID JSON to configure charts.
+
+Task: Return VALID JSON to configure charts based on the schema above.
+If the user asks for "Education" or "Degree", use 'p_emp_degree'.
+If the user asks for "Gender", use 'P_emp_sex'.
+If the user asks for "Status", use 'P_emp_Status'.
+
 Format:
 {
-  "summary": "Short insight (Chinese)",
+  "summary": "Short insight in Chinese (e.g. '当前数据显示本科员工占比最高...')",
   "charts": [
     { "id": "c1", "type": "stat", "title": "Label", "field": "P_emp_sex", "operation": "count" },
-    { "id": "c2", "type": "pie", "title": "Label", "field": "P_emp_Status" },
+    { "id": "c2", "type": "pie", "title": "Label", "field": "p_emp_degree" }, 
     { "id": "c3", "type": "bar", "title": "Label", "field": "Departmentid" }
   ]
 }`;

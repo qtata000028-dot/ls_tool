@@ -27,36 +27,43 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       const SpeechRecognition = (window as any).webkitSpeechRecognition;
       const recognition = new SpeechRecognition();
       recognition.continuous = true;
-      recognition.interimResults = true;
+      recognition.interimResults = true; // CRITICAL: Allow partial results for instant wake word
       recognition.lang = 'zh-CN';
 
       recognition.onresult = (event: any) => {
-        let transcript = '';
+        let interimTranscript = '';
+        let finalTranscript = '';
+
         for (let i = event.resultIndex; i < event.results.length; ++i) {
            if (event.results[i].isFinal) {
-              transcript += event.results[i][0].transcript;
+              finalTranscript += event.results[i][0].transcript;
+           } else {
+              interimTranscript += event.results[i][0].transcript;
            }
         }
-        // Fallback for interim results if needed, but let's prefer final for commands
-        if (!transcript) {
-            for (let i = event.resultIndex; i < event.results.length; ++i) {
-                transcript += event.results[i][0].transcript;
-            }
-        }
+
+        // 1. Check Interim (Fastest reaction for wake word)
+        if (interimTranscript) handleVoiceCommand(interimTranscript, true);
         
-        if (transcript) handleVoiceCommand(transcript);
+        // 2. Check Final (For full commands)
+        if (finalTranscript) handleVoiceCommand(finalTranscript, false);
       };
 
       recognition.onend = () => {
+        // Auto-restart if it was supposed to be listening (Chrome stops it sometimes)
         if (isListening) {
-           try { recognition.start(); } catch (e) { /* ignore */ }
+           try { recognition.start(); } catch (e) { /* ignore already started */ }
         }
       };
 
       recognition.onerror = (event: any) => {
         if (event.error === 'not-allowed') {
            setIsListening(false);
-           showFeedback("无法访问麦克风");
+           showFeedback("无法访问麦克风 (请检查权限)");
+        } else if (event.error === 'no-speech') {
+           // Ignore no-speech errors, just keep listening
+        } else {
+           console.warn("Speech Error:", event.error);
         }
       };
 
@@ -74,7 +81,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     synthRef.current.cancel(); // Stop previous
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = 'zh-CN';
-    utterance.rate = 1.2; // Slightly faster
+    utterance.rate = 1.2; 
     synthRef.current.speak(utterance);
   };
 
@@ -98,100 +105,93 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       }, 8000);
   };
 
-  const handleVoiceCommand = (text: string) => {
+  const handleVoiceCommand = (text: string, isInterim: boolean) => {
     const lowerText = text.toLowerCase();
     
-    // 1. Detect Wake Word
-    const isWakeWord = lowerText.includes('小朗') || lowerText.includes('小狼');
+    // 1. Detect Wake Word (Even in interim results)
+    const isWakeWord = lowerText.includes('小朗') || lowerText.includes('小狼') || lowerText.includes('小兰');
 
     if (isWakeWord) {
-        // Only trigger if not recently triggered to avoid repeating "I'm here" in the same sentence
+        // Only trigger if not recently triggered
         if (!isWakeWordActiveRef.current) {
             activateWakeWord();
-            speak("我在，请吩咐");
+            speak("我在");
             showFeedback("我在，请吩咐...");
-            // If the sentence was JUST the wake word, stop processing here and wait for next chunk
-            if (lowerText.length < 5) return; 
         } else {
-            // Reset timer if already active (keep alive)
+            // Keep alive
             activateWakeWord();
         }
     }
 
+    // If it's just the wake word in interim, stop here to avoid processing partial commands repeatedly
+    if (isInterim && lowerText.length < 5) return;
+
     // 2. Process Commands (Only if panel is open OR wake word is active)
-    if (isOpen || isWakeWordActiveRef.current || isWakeWord) {
+    if (isOpen || isWakeWordActiveRef.current) {
         
         let commandExecuted = false;
 
-        // --- Smart Intent Parsing ---
-
         // Complex Command: "Open tools and analyze gender ratio"
+        // Improved keyword matching for "Degree/Education"
         if ((lowerText.includes('开发平台') || lowerText.includes('工具') || lowerText.includes('员工')) && 
-            (lowerText.includes('分析') || lowerText.includes('比例') || lowerText.includes('多少人') || lowerText.includes('统计'))) {
+            (lowerText.includes('分析') || lowerText.includes('比例') || lowerText.includes('多少人') || lowerText.includes('统计') || lowerText.includes('学历') || lowerText.includes('学位'))) {
             
-            commandExecuted = true;
-            speak("好的，正在为您生成员工数据分析报告");
-            showFeedback("正在生成数据报告...");
-            onNavigate('tools', { mode: 'analysis', query: lowerText }); 
+            // Only execute on Final results or long enough interim results to avoid false triggers
+            if (!isInterim || lowerText.length > 8) {
+                commandExecuted = true;
+                speak("好的，正在生成数据分析报告");
+                showFeedback("正在生成报告...");
+                onNavigate('tools', { mode: 'analysis', query: lowerText }); 
+                
+                // Reset wake word to prevent double execution
+                isWakeWordActiveRef.current = false;
+                setIsWakeWordDetected(false);
+            }
         }
         // Standard Navigation
-        else if (lowerText.includes('知识库')) {
+        else if (lowerText.includes('知识库') && !isInterim) {
             commandExecuted = true;
-            speak("正在打开企业知识库");
+            speak("正在打开知识库");
             showFeedback("正在打开知识库...");
             onNavigate('knowledge');
-        } else if (lowerText.includes('识图') || lowerText.includes('视觉') || lowerText.includes('分析图片')) {
+        } else if ((lowerText.includes('识图') || lowerText.includes('视觉')) && !isInterim) {
             commandExecuted = true;
-            speak("正在启动视觉分析模块");
+            speak("正在启动视觉分析");
             showFeedback("正在打开 AI 识图...");
             onNavigate('vision');
-        } else if (lowerText.includes('工具') || lowerText.includes('员工') || lowerText.includes('开发平台')) {
-            commandExecuted = true;
-            speak("正在进入员工管理中心");
-            showFeedback("正在打开开发平台...");
-            onNavigate('tools');
-        } else if (lowerText.includes('主页') || lowerText.includes('仪表盘') || lowerText.includes('返回')) {
+        } else if ((lowerText.includes('主页') || lowerText.includes('返回')) && !isInterim) {
             commandExecuted = true;
             speak("正在返回主页");
-            showFeedback("正在返回主页...");
             onNavigate('dashboard');
         } 
-        
-        // If a command was executed, we can optionally reset the wake word state
-        // or keep it open for follow-up. Let's keep it open for flow.
-        if (commandExecuted) {
-            // Optional: Close the quick manual panel if it was open via voice
-        }
     }
   };
 
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputText.trim()) return;
-    // Simulate a wake word event + command
     isWakeWordActiveRef.current = true; 
-    handleVoiceCommand(inputText);
+    handleVoiceCommand(inputText, false);
     setInputText('');
   };
 
   const toggleListening = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!recognitionRef.current) {
-        showFeedback("浏览器不支持语音");
+        showFeedback("浏览器不支持语音 (请使用 Chrome)");
         return;
     }
 
     if (isListening) {
         recognitionRef.current.stop();
         setIsListening(false);
-        showFeedback("语音监听已关闭");
-        speak("语音助手已休眠");
+        showFeedback("语音已关闭");
     } else {
         try {
             recognitionRef.current.start();
             setIsListening(true);
-            showFeedback("我在听，请说“小朗”唤醒...");
-            speak("语音助手已启动");
+            showFeedback("我在听，请说“小朗”...");
+            speak("语音助手已就绪");
         } catch (e) {
             console.error(e);
         }
@@ -229,7 +229,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
                        type="text" 
                        value={inputText}
                        onChange={(e) => setInputText(e.target.value)}
-                       placeholder="输入指令 (如: 分析员工男女比例)..."
+                       placeholder="输入指令 (如: 分析本科生占比)..."
                        className="w-full bg-black/40 border border-white/10 rounded-xl pl-3 pr-9 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500/50"
                     />
                     <button type="submit" className="absolute right-2 top-1/2 -translate-y-1/2 text-blue-400 hover:text-blue-300">
@@ -238,8 +238,8 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
                  </form>
 
                  <div className="grid grid-cols-2 gap-2">
-                    <button onClick={() => { onNavigate('tools', { mode: 'analysis' }); speak("正在为您分析数据"); }} className="text-[10px] bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/30 rounded-lg py-2 text-indigo-200 transition-colors flex items-center justify-center gap-1">
-                        <BarChart3 size={12} /> 分析员工数据
+                    <button onClick={() => { onNavigate('tools', { mode: 'analysis', query: '分析一下现在的学历分布情况' }); speak("正在为您分析学历数据"); }} className="text-[10px] bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/30 rounded-lg py-2 text-indigo-200 transition-colors flex items-center justify-center gap-1">
+                        <BarChart3 size={12} /> 分析学历分布
                     </button>
                     <button onClick={() => onNavigate('vision')} className="text-[10px] bg-white/5 hover:bg-white/10 border border-white/5 rounded-lg py-2 text-slate-300 transition-colors">打开识图</button>
                     <button onClick={() => onNavigate('knowledge')} className="text-[10px] bg-white/5 hover:bg-white/10 border border-white/5 rounded-lg py-2 text-slate-300 transition-colors">知识库</button>
