@@ -171,6 +171,7 @@ const ToolsPlatform: React.FC<ToolsPlatformProps> = ({ onBack, aiParams }) => {
   const [isAnalysisOpen, setIsAnalysisOpen] = useState(false);
   const [isAiGenerating, setIsAiGenerating] = useState(false);
   const [aiReportConfig, setAiReportConfig] = useState<AIReport | null>(null);
+  const [followQuery, setFollowQuery] = useState('');
 
   // Recruitment Trend Data (Calculated)
   const [recruitmentTrend, setRecruitmentTrend] = useState<{ year: string; count: number }[]>([]);
@@ -725,6 +726,15 @@ Return JSON Format:
     generateDynamicAnalysis(query, employees, departments, dataSchema, recruitmentTrend);
   };
 
+  const submitFollowQuery = (evt?: React.FormEvent) => {
+    if (evt) evt.preventDefault();
+    const nextQuery = followQuery.trim();
+    if (!nextQuery) return;
+    setIsAnalysisOpen(true);
+    generateDynamicAnalysis(nextQuery, employees, departments, dataSchema, recruitmentTrend);
+    setFollowQuery('');
+  };
+
   const deptOptions = [
     { value: '', label: '所有部门' },
     ...departments.map((d) => ({ value: d.Departmentid, label: d.departmentname })),
@@ -773,6 +783,16 @@ Return JSON Format:
             title="查看数据字典 (AI 知识库)"
           >
             <TableProperties size={14} /> 字段字典
+          </button>
+
+          <button
+            onClick={() => {
+              setIsAnalysisOpen(true);
+              if (!aiReportConfig) generateDynamicAnalysis('综合分析', employees, departments, dataSchema, recruitmentTrend);
+            }}
+            className="md:hidden flex items-center gap-2 px-3 py-2 rounded-lg bg-gradient-to-r from-blue-600/80 to-indigo-600/80 text-xs font-bold text-white shadow-lg shadow-blue-500/20 transition-all border border-white/10"
+          >
+            <BarChart3 size={14} /> AI 驾驶舱
           </button>
 
           <button
@@ -1315,6 +1335,35 @@ Return JSON Format:
                     </div>
                   </div>
                 </div>
+
+                <form
+                  onSubmit={submitFollowQuery}
+                  className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 p-4 rounded-2xl bg-white/5 border border-white/10"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-300">
+                      <BrainCircuit size={16} />
+                    </div>
+                    <div className="flex-1">
+                      <input
+                        type="text"
+                        value={followQuery}
+                        onChange={(e) => setFollowQuery(e.target.value)}
+                        placeholder="继续追问：例如“帮我按学历和部门交叉分析”"
+                        className="w-full bg-black/20 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/50"
+                        disabled={isAiGenerating}
+                      />
+                      <p className="text-[11px] text-slate-400 mt-1">无需返回主页，直接在此继续对话，支持多轮分析。</p>
+                    </div>
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={isAiGenerating}
+                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 text-white text-sm font-semibold shadow-lg border border-white/10 disabled:opacity-60"
+                  >
+                    {isAiGenerating ? '生成中...' : '追加提问'}
+                  </button>
+                </form>
 
                 {/* EXECUTIVE SUMMARY */}
                 <div className="relative p-8 rounded-3xl bg-gradient-to-r from-slate-900 to-slate-900 border border-white/10 overflow-hidden shadow-2xl">

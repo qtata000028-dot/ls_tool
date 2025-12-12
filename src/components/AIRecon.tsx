@@ -549,15 +549,15 @@ const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
       ) : (
           // MOBILE: Bottom Sheet
           <div className={`
-             absolute z-50 bottom-0 inset-x-0 
-             bg-[#0F1629]/95 backdrop-blur-2xl 
+             absolute z-50 bottom-0 inset-x-0
+             bg-[#0F1629]/95 backdrop-blur-2xl
              border-t border-white/10 rounded-t-[32px]
              shadow-[0_-10px_40px_rgba(0,0,0,0.5)]
              transition-all duration-500 cubic-bezier(0.32, 0.72, 0, 1)
              flex flex-col
-             ${isResultExpanded ? 'h-[85%]' : 'h-[0px] overflow-hidden border-none'}
+             ${isResultExpanded ? 'h-[85%]' : 'h-[96px]'}
           `}>
-             <div 
+             <div
                 onClick={() => setIsResultExpanded(!isResultExpanded)}
                 className="w-full h-[60px] flex items-center justify-between px-6 border-b border-white/5 cursor-pointer active:bg-white/5 shrink-0"
              >

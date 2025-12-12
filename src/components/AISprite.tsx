@@ -54,16 +54,19 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       .trim()
       .toLowerCase();
 
-  const wakeWordPatterns = ['小朗小朗', '小朗']; // 只想“双唤醒”就留 '小朗小朗'
+  // 只想“双唤醒”就留 ['小朗小朗']，不要 '小朗'
+  const wakeWordPatterns = ['小朗小朗', '小朗'];
+
   const detectWakeWord = (text: string) => {
     const t = normalize(text);
     if (!t) return false;
-    return wakeWordPatterns.some(p => t.includes(p));
+    return wakeWordPatterns.some((p) => t.includes(p));
   };
 
   const stripWakeWord = (text: string) => {
     let t = normalize(text);
-    wakeWordPatterns.forEach(p => {
+    wakeWordPatterns.forEach((p) => {
+      // replaceAll 在现代浏览器可用；如果要兼容更老，可改用 split/join
       t = t.replaceAll(p, ' ');
     });
     return t.replace(/\s+/g, ' ').trim();
@@ -262,16 +265,11 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
         return;
       }
 
-      if (event.error === 'no-speech') {
-        // 不提示太多，避免刷屏
-        return;
-      }
-
+      if (event.error === 'no-speech') return; // 避免刷屏
       if (event.error === 'audio-capture') {
         showFeedback('未检测到麦克风设备');
         return;
       }
-
       if (event.error === 'network') {
         showFeedback('语音识别网络错误');
         return;
@@ -411,6 +409,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
                     {isListening ? '监听中：说“小朗小朗”唤醒' : '点击麦克风开启监听（需要权限）'}
                   </span>
                 </div>
+
                 {capturedSpeech && (
                   <div className="text-[10px] text-slate-300/80 break-words">
                     <span className="text-slate-500">识别：</span>
@@ -471,7 +470,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
             ${isListening ? 'opacity-100 animate-pulse bg-blue-500/30' : 'opacity-0 group-hover:opacity-60 bg-blue-500/30'}
             ${isWakeWordDetected ? 'bg-emerald-500/50 scale-125 opacity-100' : ''}
          `}
-        ></div>
+        />
 
         <div
           className={`
@@ -489,7 +488,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
           ) : (
             <Bot size={28} className="text-indigo-300" />
           )}
-          <div className="absolute top-1 right-1 w-3 h-3 bg-emerald-500 border-2 border-[#0F1629] rounded-full"></div>
+          <div className="absolute top-1 right-1 w-3 h-3 bg-emerald-500 border-2 border-[#0F1629] rounded-full" />
         </div>
       </div>
     </div>
