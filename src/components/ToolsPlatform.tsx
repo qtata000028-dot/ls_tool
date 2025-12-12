@@ -171,6 +171,7 @@ const ToolsPlatform: React.FC<ToolsPlatformProps> = ({ onBack, aiParams }) => {
   const [isAnalysisOpen, setIsAnalysisOpen] = useState(false);
   const [isAiGenerating, setIsAiGenerating] = useState(false);
   const [aiReportConfig, setAiReportConfig] = useState<AIReport | null>(null);
+  const [followQuery, setFollowQuery] = useState('');
 
   // Recruitment Trend Data (Calculated)
   const [recruitmentTrend, setRecruitmentTrend] = useState<{ year: string; count: number }[]>([]);
@@ -303,6 +304,39 @@ const ToolsPlatform: React.FC<ToolsPlatformProps> = ({ onBack, aiParams }) => {
 
     return { total, deptTotal, recentHires, missingPhones, avgTenure };
   }, [employees, departments, recruitmentTrend]);
+
+  const heroStats = useMemo(() => {
+    const avgDataHealth = Math.round(
+      dataQualityMetrics.reduce((acc, metric) => acc + metric.value, 0) / (dataQualityMetrics.length || 1)
+    );
+
+    return [
+      {
+        label: '在册员工',
+        value: baselineStats.total,
+        hint: '实时样本量',
+        accent: 'from-emerald-500/30 via-emerald-500/10 to-emerald-500/0',
+      },
+      {
+        label: '覆盖部门',
+        value: baselineStats.deptTotal,
+        hint: '组织层级数',
+        accent: 'from-blue-500/30 via-blue-500/10 to-blue-500/0',
+      },
+      {
+        label: '最新入职',
+        value: baselineStats.recentHires,
+        hint: '最近年度新增',
+        accent: 'from-indigo-500/30 via-indigo-500/10 to-indigo-500/0',
+      },
+      {
+        label: '数据健康度',
+        value: `${avgDataHealth}%`,
+        hint: '字段完整性',
+        accent: 'from-amber-500/30 via-amber-500/10 to-amber-500/0',
+      },
+    ];
+  }, [baselineStats, dataQualityMetrics]);
 
   const deptSnapshots = useMemo(() => {
     const map: Record<string, { count: number; male: number; female: number; degreeFilled: number }> = {};
@@ -692,6 +726,15 @@ Return JSON Format:
     generateDynamicAnalysis(query, employees, departments, dataSchema, recruitmentTrend);
   };
 
+  const submitFollowQuery = (evt?: React.FormEvent) => {
+    if (evt) evt.preventDefault();
+    const nextQuery = followQuery.trim();
+    if (!nextQuery) return;
+    setIsAnalysisOpen(true);
+    generateDynamicAnalysis(nextQuery, employees, departments, dataSchema, recruitmentTrend);
+    setFollowQuery('');
+  };
+
   const deptOptions = [
     { value: '', label: '所有部门' },
     ...departments.map((d) => ({ value: d.Departmentid, label: d.departmentname })),
@@ -706,9 +749,16 @@ Return JSON Format:
   const CHART_COLORS = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899', '#6366f1', '#14b8a6'];
 
   return (
-    <div className="w-full h-[85vh] max-w-[1600px] mx-auto bg-[#0F1629]/80 backdrop-blur-2xl border border-white/10 rounded-3xl flex flex-col overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-500 relative">
+    <div className="w-full h-[85vh] max-w-[1600px] mx-auto bg-[#0F1629]/80 backdrop-blur-2xl border border-white/10 rounded-3xl flex flex-col overflow-hidden shadow-[0_30px_80px_-40px_rgba(0,0,0,0.8)] animate-in fade-in zoom-in-95 duration-500 relative">
+      <div className="absolute inset-0 pointer-events-none">
+        <div className="absolute -left-10 -top-16 w-64 h-64 bg-indigo-500/15 blur-3xl" />
+        <div className="absolute right-10 top-10 w-80 h-80 bg-emerald-500/10 blur-[120px]" />
+        <div className="absolute -bottom-10 right-1/4 w-72 h-72 bg-sky-500/10 blur-3xl" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.04),transparent_30%),radial-gradient(circle_at_80%_0%,rgba(99,102,241,0.06),transparent_32%)]" />
+      </div>
+
       {/* 1. Navbar */}
-      <div className="h-16 px-6 border-b border-white/5 flex items-center justify-between shrink-0 bg-white/[0.02]">
+      <div className="h-16 px-6 border-b border-white/5 flex items-center justify-between shrink-0 bg-white/[0.04] backdrop-blur-xl relative z-10">
         <div className="flex items-center gap-4">
           <button
             onClick={onBack}
@@ -716,12 +766,14 @@ Return JSON Format:
           >
             <ArrowLeft size={20} />
           </button>
-          <h2 className="text-lg font-bold text-white tracking-tight flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
-            员工管理中心
-          </h2>
-          <div className="h-4 w-[1px] bg-white/10 mx-2"></div>
-          <span className="text-sm text-slate-400 font-mono">Total: {filteredData.length}</span>
+          <div>
+            <div className="text-xs uppercase text-indigo-200/70 font-bold tracking-[0.2em]">HR - cockpit</div>
+            <h2 className="text-lg font-bold text-white tracking-tight flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
+              员工管理中心
+              <span className="text-[11px] text-slate-400 font-mono bg-white/5 px-2 py-0.5 rounded-full border border-white/10">{filteredData.length} records</span>
+            </h2>
+          </div>
         </div>
 
         <div className="flex items-center gap-3">
@@ -731,6 +783,16 @@ Return JSON Format:
             title="查看数据字典 (AI 知识库)"
           >
             <TableProperties size={14} /> 字段字典
+          </button>
+
+          <button
+            onClick={() => {
+              setIsAnalysisOpen(true);
+              if (!aiReportConfig) generateDynamicAnalysis('综合分析', employees, departments, dataSchema, recruitmentTrend);
+            }}
+            className="md:hidden flex items-center gap-2 px-3 py-2 rounded-lg bg-gradient-to-r from-blue-600/80 to-indigo-600/80 text-xs font-bold text-white shadow-lg shadow-blue-500/20 transition-all border border-white/10"
+          >
+            <BarChart3 size={14} /> AI 驾驶舱
           </button>
 
           <button
@@ -760,7 +822,7 @@ Return JSON Format:
               placeholder="搜索姓名、工号..."
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
-              className="w-full bg-black/20 border border-white/10 rounded-lg pl-10 pr-4 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500/50 transition-all"
+              className="w-full bg-gradient-to-r from-white/5 to-white/0 border border-white/10 rounded-lg pl-10 pr-4 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500/50 focus:ring-2 focus:ring-indigo-500/20 transition-all shadow-[0_10px_40px_-25px_rgba(99,102,241,0.6)]"
             />
           </div>
 
@@ -784,10 +846,51 @@ Return JSON Format:
         </div>
       )}
 
+      <div className="px-6 pt-4 pb-5 bg-white/[0.01] border-b border-white/5 relative z-10">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <div className="flex items-center gap-3 text-xs text-slate-300">
+            <span className="px-2 py-1 rounded-full bg-indigo-500/10 text-indigo-200 border border-indigo-500/30 flex items-center gap-1">
+              <Sparkles size={12} /> 高级视图
+            </span>
+            <span className="hidden md:flex items-center gap-2 text-slate-400 font-mono text-[11px]">
+              <Database size={12} className="text-emerald-400" /> 数据自动刷新 · 光滑玻璃界面
+            </span>
+          </div>
+          <div className="flex items-center gap-2 text-[11px] text-slate-400">
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white/5 border border-white/10">
+              <Activity size={12} className="text-emerald-400" /> 实时同步
+            </span>
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white/5 border border-white/10">
+              <Lock size={12} className="text-indigo-400" /> Secure channel
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {heroStats.map((item) => (
+            <div
+              key={item.label}
+              className="p-4 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-md relative overflow-hidden shadow-[0_15px_45px_-35px_rgba(0,0,0,0.6)]"
+            >
+              <div className={`absolute inset-0 bg-gradient-to-br ${item.accent} opacity-70`} />
+              <div className="absolute inset-px rounded-2xl border border-white/10 opacity-40" />
+              <div className="relative z-10 space-y-1">
+                <div className="flex items-center gap-2 text-[11px] text-slate-300">
+                  <div className="w-1.5 h-1.5 rounded-full bg-white/60 animate-pulse" />
+                  {item.label}
+                </div>
+                <div className="text-2xl font-bold text-white tracking-tight">{item.value}</div>
+                <div className="text-[11px] text-slate-200/70">{item.hint}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* 2. Table */}
-      <div className="flex-1 overflow-auto custom-scrollbar relative">
+      <div className="flex-1 overflow-auto custom-scrollbar relative z-10">
         <table className="w-full text-left border-separate border-spacing-0">
-          <thead className="sticky top-0 z-20 bg-[#0F1629] text-xs font-bold text-slate-500 uppercase tracking-wider shadow-sm">
+          <thead className="sticky top-0 z-20 bg-gradient-to-r from-[#0F1629] via-[#0F1629]/95 to-[#0F1629] text-xs font-bold text-slate-400 uppercase tracking-wider shadow-[0_10px_30px_-20px_rgba(0,0,0,0.8)] backdrop-blur">
             <tr>
               <th className="sticky left-0 z-30 bg-[#0F1629] px-6 py-4 border-b border-white/10 border-r border-white/5 w-[200px]">
                 员工信息
@@ -822,7 +925,7 @@ Return JSON Format:
                   <tr
                     key={row.P_emp_no}
                     onDoubleClick={() => openEditor(row)}
-                    className="group hover:bg-white/[0.03] transition-colors cursor-pointer"
+                    className="group hover:bg-white/[0.04] even:bg-white/[0.02] transition-colors cursor-pointer"
                   >
                     <td className="sticky left-0 z-10 px-6 py-3 bg-[#0F1629] group-hover:bg-[#131b2e] border-r border-white/5 transition-colors">
                       <div className="flex items-center gap-3">
@@ -1232,6 +1335,35 @@ Return JSON Format:
                     </div>
                   </div>
                 </div>
+
+                <form
+                  onSubmit={submitFollowQuery}
+                  className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 p-4 rounded-2xl bg-white/5 border border-white/10"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-300">
+                      <BrainCircuit size={16} />
+                    </div>
+                    <div className="flex-1">
+                      <input
+                        type="text"
+                        value={followQuery}
+                        onChange={(e) => setFollowQuery(e.target.value)}
+                        placeholder="继续追问：例如“帮我按学历和部门交叉分析”"
+                        className="w-full bg-black/20 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/50"
+                        disabled={isAiGenerating}
+                      />
+                      <p className="text-[11px] text-slate-400 mt-1">无需返回主页，直接在此继续对话，支持多轮分析。</p>
+                    </div>
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={isAiGenerating}
+                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 text-white text-sm font-semibold shadow-lg border border-white/10 disabled:opacity-60"
+                  >
+                    {isAiGenerating ? '生成中...' : '追加提问'}
+                  </button>
+                </form>
 
                 {/* EXECUTIVE SUMMARY */}
                 <div className="relative p-8 rounded-3xl bg-gradient-to-r from-slate-900 to-slate-900 border border-white/10 overflow-hidden shadow-2xl">

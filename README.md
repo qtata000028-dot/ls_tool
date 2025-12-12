@@ -18,3 +18,15 @@ View your app in AI Studio: https://ai.studio/apps/drive/1eQSnUuKfMnxWGYUGVUH8FQ
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+## Merge conflict policy
+
+If you encounter conflicts while merging, prefer the Codex branch version by running `git checkout --ours <file>` before marking the file as resolved.
+
+To resolve an entire merge using the Codex side, you can run the following sequence:
+
+```
+git checkout --ours .
+git add -A
+git commit -m "resolve: keep codex"
+```
