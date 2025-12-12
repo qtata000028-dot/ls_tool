@@ -15,6 +15,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
   const recognitionRef = useRef<any>(null);
   const feedbackTimeoutRef = useRef<number | null>(null);
   const synthRef = useRef<SpeechSynthesis>(window.speechSynthesis);
+  const isListeningRef = useRef(false);
 
   // Avoid repeated auto-start attempts
   const autoListenStartedRef = useRef(false);
@@ -58,7 +59,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
 
     recognition.onend = () => {
       // Auto-restart if it was supposed to be listening (Chrome stops it sometimes)
-      if (isListening) {
+      if (isListeningRef.current) {
           try { recognition.start(); } catch (e) { /* ignore already started */ }
       }
     };
@@ -88,6 +89,10 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
        if (recognitionRef.current) recognitionRef.current.stop();
        if (wakeWordTimerRef.current) clearTimeout(wakeWordTimerRef.current);
     };
+  }, []);
+
+  useEffect(() => {
+    isListeningRef.current = isListening;
   }, [isListening]);
 
   // Auto-attempt to start listening in secure preview contexts so the wake word works immediately
@@ -231,11 +236,13 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     if (isListening) {
         recognitionRef.current.stop();
         setIsListening(false);
+        isListeningRef.current = false;
         showFeedback("语音已关闭");
     } else {
         try {
             recognitionRef.current.start();
             setIsListening(true);
+            isListeningRef.current = true;
             showFeedback("我在听，请说“小朗”...");
             speak("语音助手已就绪");
         } catch (e) {
