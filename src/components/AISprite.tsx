@@ -17,6 +17,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
   // cloud asr
   const [isCloudBusy, setIsCloudBusy] = useState(false);
   const [recorderReady, setRecorderReady] = useState(false);
+  const [preferCloud, setPreferCloud] = useState(true);
 
   const recognitionRef = useRef<any>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -34,6 +35,27 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
   const lastResultAtRef = useRef<number>(0);
 
   // ===== Helpers =====
+  const showFeedback = (text: string) => {
+    setFeedback(text);
+    if (feedbackTimeoutRef.current) window.clearTimeout(feedbackTimeoutRef.current);
+    feedbackTimeoutRef.current = window.setTimeout(() => setFeedback(''), 4000);
+  };
+
+  // 某些浏览器 TTS 需要先“用户手势”解锁，这里在点击开启监听时调用一次
+  const unlockTTS = () => {
+    try {
+      if (!synthRef.current) return;
+      const u = new SpeechSynthesisUtterance(' ');
+      u.lang = 'zh-CN';
+      u.volume = 0;
+      u.rate = 1;
+      synthRef.current.speak(u);
+      synthRef.current.cancel();
+    } catch {
+      // ignore
+    }
+  };
+
   const speak = (text: string) => {
     try {
       if (!synthRef.current) return;
@@ -47,12 +69,6 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     }
   };
 
-  const showFeedback = (text: string) => {
-    setFeedback(text);
-    if (feedbackTimeoutRef.current) window.clearTimeout(feedbackTimeoutRef.current);
-    feedbackTimeoutRef.current = window.setTimeout(() => setFeedback(''), 4000);
-  };
-
   const normalize = (s: string) =>
     (s || '')
       .replace(/[，。！？、,.!?]/g, ' ')
@@ -61,11 +77,10 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       .toLowerCase();
 
   // ✅ 唤醒词：双唤醒（小朗小朗）兼容误识别：小浪小浪/小狼小狼/小郎小郎/小廊小廊
-  // 只双唤醒：默认启用 double
-  const doubleWakeTest = /小[朗浪狼郎廊]\s*小[朗浪狼郎廊]/;
+  const doubleWakeTest = /小[朗浪狼郎廊]\s*小[朗浪狼郎廊]/; // 不加 g，避免 test lastIndex
   const doubleWakeStrip = /小[朗浪狼郎廊]\s*小[朗浪狼郎廊]/g;
 
-  // 可选：如果你也想支持英文/拼音（可按需打开）
+  // 可选：拼音双唤醒
   const pinyinDoubleWakeTest = /xiao\s*lang\s*xiao\s*lang|xiaolang\s*xiaolang/i;
   const pinyinDoubleWakeStrip = /xiao\s*lang\s*xiao\s*lang|xiaolang\s*xiaolang/gi;
 
@@ -163,7 +178,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
         isWakeWordActiveRef.current = true;
         setIsWakeWordDetected(true);
 
-        // ✅ 你要的“我在”
+        // ✅ 命中唤醒：立刻“我在”
         showFeedback('我在：请说出指令（如：打开知识库 / 分析学历分布）');
         speak('我在，请说出指令');
 
@@ -225,12 +240,10 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
         audioBlob,
         (partial: string) => {
           const clean = (partial || '').replace(/\s+/g, ' ').trim();
-          if (clean) {
-            // 预览
-            setCapturedSpeech(clean.slice(0, 180));
-            // partial 也喂给唤醒检测，尽量做到“实时我在”
-            handleVoiceStream(clean, false);
-          }
+          if (!clean) return;
+          setCapturedSpeech(clean.slice(0, 180));
+          // partial 也喂给唤醒检测，做到“实时我在”
+          handleVoiceStream(clean, false);
         },
         (finalResult: string) => {
           finalText = (finalResult || '').trim();
@@ -247,16 +260,8 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     } catch (err) {
       console.error(err);
       showFeedback('云端识别失败，已回退浏览器识别');
+      setPreferCloud(false);
       speak('云端识别失败，我将使用浏览器识别');
-
-      // fallback to browser recognition
-      try {
-        if (recognitionRef.current) {
-          recognitionRef.current.stop?.();
-        }
-      } catch {
-        // ignore
-      }
     } finally {
       setIsCloudBusy(false);
     }
@@ -270,7 +275,6 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     } catch (err) {
       console.warn('Recorder stop error', err);
     }
-
     setIsListening(false);
     isListeningRef.current = false;
   };
@@ -284,7 +288,6 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-      // 一些浏览器对 mimeType 支持不同，这里做个兜底
       const preferMime = 'audio/webm';
       const recorder = new MediaRecorder(stream, {
         mimeType: preferMime,
@@ -309,16 +312,15 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       setIsListening(true);
       isListeningRef.current = true;
       resetWakeWordState();
+      setCapturedSpeech('');
 
-      showFeedback('录音中：说“小朗小朗”我会回应“我在”');
-      // 这里也可以不播报，避免打断用户；你想播就留着
-      // speak('开始录音，请说小朗小朗唤醒我');
-
+      showFeedback('录音中：说“小朗小朗”（可识别成“小浪小浪”）我会回应“我在”');
       return true;
     } catch (err) {
       console.error(err);
       showFeedback('麦克风不可用，请检查权限');
       setRecorderReady(false);
+      setPreferCloud(false);
       return false;
     }
   };
@@ -414,13 +416,11 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       } catch {
         // ignore
       }
-
       try {
         mediaRecorderRef.current?.stop?.();
       } catch {
         // ignore
       }
-
       if (feedbackTimeoutRef.current) window.clearTimeout(feedbackTimeoutRef.current);
       if (wakeWordTimerRef.current) window.clearTimeout(wakeWordTimerRef.current);
     };
@@ -463,7 +463,6 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
         return;
       }
 
-      // unknown mode fallback
       setIsListening(false);
       isListeningRef.current = false;
       resetWakeWordState();
@@ -477,12 +476,25 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       return;
     }
 
+    // 解锁 TTS（关键：不然你会遇到“识别到了但不说我在”）
+    unlockTTS();
+
     // 优先：云端极速（有 MediaRecorder）
-    if (recorderReady && !isCloudBusy) {
-      modeRef.current = 'cloud';
-      const ok = await startRecording();
-      if (ok) return;
-      // 若失败继续 fallback
+    if (preferCloud && recorderReady && !isCloudBusy) {
+      try {
+        // 可选：如果你实现了 isFastAsrAvailable，就先探测一下
+        const cloudOk = await (aliyunService as any)?.isFastAsrAvailable?.();
+        if (cloudOk === false) {
+          setPreferCloud(false);
+          showFeedback('未检测到云端配置，改用本地语音');
+        } else {
+          modeRef.current = 'cloud';
+          const ok = await startRecording();
+          if (ok) return;
+        }
+      } catch {
+        // ignore & fallback
+      }
     }
 
     // fallback：浏览器识别（webkitSpeechRecognition）
@@ -507,8 +519,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       setIsListening(true);
       isListeningRef.current = true;
 
-      showFeedback('监听中：请说“小朗小朗”（可误识别为“小浪小浪”）');
-      // speak('我在听，请说小朗小朗唤醒我'); // 可选：开播报
+      showFeedback('监听中：请说“小朗小朗”（可识别成“小浪小浪”）');
     } catch (err) {
       console.warn('语音启动失败', err);
       showFeedback('语音启动失败，请确认麦克风权限');
