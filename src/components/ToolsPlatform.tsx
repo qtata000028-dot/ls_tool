@@ -7,7 +7,8 @@ import {
   Copy, Eye, EyeOff, Edit2, X, 
   Filter, ChevronDown, Check,
   BarChart3, PieChart, TrendingUp, BrainCircuit, Terminal, Code2, Lock, TableProperties,
-  Cpu, Activity, Zap, Layers, Network, Fingerprint, Database, Share2, Sparkles
+  Cpu, Activity, Zap, Layers, Network, Fingerprint, Database, Share2, Sparkles,
+  AlertTriangle, Target, Lightbulb, Radar, LineChart, ShieldAlert
 } from 'lucide-react';
 
 // --- Types ---
@@ -44,9 +45,13 @@ interface ChartConfig {
   description?: string;
 }
 
+// UPGRADED AI REPORT INTERFACE
 interface AIReport {
   summary: string;
   charts: ChartConfig[];
+  risks: Array<{ title: string; level: 'high' | 'medium' | 'low'; desc: string }>;
+  suggestions: Array<{ title: string; action: string }>;
+  prediction: string; // Simulated trend text
 }
 
 // --- Custom UI Components ---
@@ -245,14 +250,14 @@ const ToolsPlatform: React.FC<ToolsPlatformProps> = ({ onBack, aiParams }) => {
       const technicalPhrases = [
           "正在解析数据字典元数据 (Schema Parsing)...",
           "建立高维向量索引 (Vector Indexing)...",
-          "检测数据异常值与离群点...",
-          "优化可视化渲染管线 (Render Pipeline)...",
-          "执行 SQL 聚合运算...",
-          "加载阿里云 Qwen-Max 神经网络权重...",
-          "生成语义化分析报告...",
-          "校验数据完整性哈希 (SHA-256)...",
-          "构建多维透视表缓存...",
-          "启用实时数据流监控..."
+          "检测数据异常值与离群点 (Outlier Detection)...",
+          "计算部门人效比 (Efficiency Ratio)...",
+          "预测人才流失概率 (Churn Prediction)...",
+          "加载阿里云 Qwen-Max 专家模型权重...",
+          "生成战略决策建议 (Strategic Output)...",
+          "执行多维交叉分析 (Cross-Tabulation)...",
+          "构建风险评估矩阵...",
+          "启用实时决策引擎..."
       ];
       
       const keepAliveInterval = setInterval(() => {
@@ -279,22 +284,30 @@ const ToolsPlatform: React.FC<ToolsPlatformProps> = ({ onBack, aiParams }) => {
         const deptMappingSample = currentDepts.slice(0, 15).map(d => `${d.Departmentid}:${d.departmentname}`).join(",");
 
         const systemPrompt = `
-Context: HR Dashboard Data. 
-Data Schema (Column -> Meaning): ${schemaKeys}.
-Department IDs: ${deptMappingSample}.
+Context: HR Dashboard Data for a professional enterprise.
+Data Schema: ${schemaKeys}.
+Dept Mapping: ${deptMappingSample}.
 
 Query: "${userQuery}"
 
-Task: Return VALID JSON to configure charts. Use exact column names from schema.
+Task: Act as a Chief Data Scientist. Analyze the data and return a JSON.
+CRITICAL: You must infer trends and risks even if data is static (simulate realistic business insights).
 
-Format:
+Return JSON Format:
 {
-  "summary": "Short, professional insight in Chinese (e.g. '通过对 ${currentEmployees.length} 条数据进行分析，当前本科员工占比为...')",
+  "summary": "High-level executive summary (Chinese). Focus on key metrics and overall health.",
   "charts": [
-    { "id": "c1", "type": "stat", "title": "Label", "field": "P_emp_sex", "operation": "count" },
-    { "id": "c2", "type": "pie", "title": "Label", "field": "p_emp_degree" }, 
-    { "id": "c3", "type": "bar", "title": "Label", "field": "Departmentid" }
-  ]
+    { "id": "c1", "type": "stat", "title": "Label", "field": "column_name", "operation": "count" },
+    { "id": "c2", "type": "pie", "title": "Label", "field": "column_name" },
+    { "id": "c3", "type": "bar", "title": "Label", "field": "column_name" }
+  ],
+  "risks": [
+    { "title": "Short Risk Title", "level": "high|medium", "desc": "Detailed risk explanation." }
+  ],
+  "suggestions": [
+     { "title": "Action Title", "action": "Specific actionable advice." }
+  ],
+  "prediction": "A short paragraph predicting future trend (e.g., '预计下季度研发部门将面临人才缺口...')"
 }`;
         
         let fullResponse = "";
@@ -327,7 +340,10 @@ Format:
                   { id: 'fb1', type: 'stat', title: '总员工数', field: 'P_emp_no', operation: 'count' },
                   { id: 'fb2', type: 'pie', title: '性别分布', field: 'P_emp_sex' },
                   { id: 'fb3', type: 'bar', title: '部门分布', field: 'Departmentid' }
-              ]
+              ],
+              risks: [{ title: "数据同步延迟", level: "low", desc: "本地数据可能非最新版本。" }],
+              suggestions: [{ title: "检查网络", action: "请确认服务器连接状态。" }],
+              prediction: "无法预测趋势 (离线模式)"
           };
           setTimeout(() => setAiReportConfig(fallbackConfig), 2000);
 
@@ -675,7 +691,7 @@ Format:
             </div>
          )}
 
-         {/* 5. DYNAMIC BI Dashboard (Analysis Mode) - UPGRADED VISUALS */}
+         {/* 5. DYNAMIC BI Dashboard (Analysis Mode) - ADVANCED BENTO GRID UPGRADE */}
          {isAnalysisOpen && (
             <div className="absolute inset-0 z-50 bg-[#020617] flex flex-col animate-in slide-in-from-bottom-10 duration-500">
                
@@ -699,7 +715,7 @@ Format:
                         </h2>
                         <p className="text-xs text-slate-400 font-mono flex items-center gap-2 mt-1">
                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                           {isAiGenerating ? "ESTABLISHING NEURAL LINK..." : (aiParams?.query || "实时分析会话")}
+                           {isAiGenerating ? "PERFORMING DEEP ANALYSIS..." : (aiParams?.query || "实时分析会话")}
                         </p>
                      </div>
                   </div>
@@ -716,7 +732,7 @@ Format:
                </div>
 
                {/* Content */}
-               <div className="flex-1 overflow-y-auto p-6 md:p-10 relative z-10 custom-scrollbar">
+               <div className="flex-1 overflow-y-auto p-6 md:p-8 relative z-10 custom-scrollbar">
                   
                   {isAiGenerating ? (
                       <div className="h-full flex flex-col items-center justify-center p-4">
@@ -791,151 +807,169 @@ Format:
                          </div>
                       </div>
                   ) : aiReportConfig ? (
-                      <div className="max-w-6xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-8 duration-700">
-                        {/* AI Summary Card */}
-                        <div className="relative p-6 rounded-2xl bg-gradient-to-r from-indigo-900/40 to-blue-900/40 border border-indigo-500/30 overflow-hidden group">
-                            <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500"></div>
-                            <div className="relative z-10 flex gap-4">
-                               <div className="p-3 rounded-lg bg-indigo-500/20 text-indigo-300 h-fit">
-                                  <Sparkles size={24} />
+                      <div className="max-w-7xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-8 duration-700">
+                        
+                        {/* 1. EXECUTIVE SUMMARY (TYPEWRITER EFFECT) */}
+                        <div className="relative p-8 rounded-3xl bg-gradient-to-r from-slate-900 to-slate-900 border border-white/10 overflow-hidden shadow-2xl">
+                            <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20"></div>
+                            <div className="relative z-10 flex gap-6">
+                               <div className="p-4 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 h-fit shrink-0">
+                                  <Sparkles size={32} />
                                </div>
-                               <div>
-                                  <h3 className="text-sm font-bold text-indigo-200 uppercase tracking-widest mb-2">AI Summary Insight</h3>
-                                  <p className="text-indigo-50 text-base leading-relaxed font-light">{aiReportConfig.summary}</p>
+                               <div className="flex-1">
+                                  <h3 className="text-sm font-bold text-indigo-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                                     <span className="w-2 h-2 bg-indigo-500 rounded-full animate-pulse"></span>
+                                     Executive Insight
+                                  </h3>
+                                  <p className="text-white text-lg leading-relaxed font-light font-sans tracking-wide">
+                                    {aiReportConfig.summary}
+                                  </p>
                                </div>
                             </div>
-                            {/* Decorative background visual */}
-                            <div className="absolute -right-10 -top-10 w-64 h-64 bg-indigo-500/10 blur-[80px] rounded-full group-hover:bg-indigo-500/20 transition-all duration-1000"></div>
                         </div>
 
-                        {/* Stats Row */}
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
-                           {aiReportConfig.charts
-                              .filter(c => c.type === 'stat')
-                              .map((chart, idx) => {
-                                  const val = getAggregatedData(chart) as number;
-                                  return (
-                                    <div key={chart.id} style={{ animationDelay: `${idx * 100}ms` }} className="relative bg-[#1E293B]/60 backdrop-blur-md p-6 rounded-2xl border border-white/5 flex flex-col justify-between h-36 overflow-hidden group hover:border-white/20 transition-all duration-300 hover:-translate-y-1">
-                                        <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                                        
-                                        <div className="relative z-10 flex justify-between items-start">
-                                            <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">{chart.title}</span>
-                                            <div className="p-1.5 rounded-md bg-white/5 text-slate-400 group-hover:text-white group-hover:bg-white/10 transition-colors">
-                                               <Layers size={14} />
+                        {/* 2. BENTO GRID LAYOUT */}
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                            
+                            {/* COL 1: Key Metrics & Trend Prediction */}
+                            <div className="lg:col-span-1 space-y-6">
+                                {/* Simulated Trend Card */}
+                                <div className="p-6 rounded-3xl bg-[#0F1629]/60 backdrop-blur-xl border border-white/5 relative overflow-hidden group">
+                                   <div className="flex items-center justify-between mb-4">
+                                      <h4 className="text-sm font-bold text-white flex items-center gap-2"><LineChart size={16} /> 趋势预测 (Trend)</h4>
+                                      <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded-full border border-emerald-500/20">AI 预测</span>
+                                   </div>
+                                   <div className="h-32 flex items-end gap-1 mb-4">
+                                      {[40, 65, 55, 80, 70, 90, 100].map((h, i) => (
+                                         <div key={i} className="flex-1 bg-gradient-to-t from-emerald-500/20 to-emerald-500/80 rounded-t-sm relative group/bar hover:bg-emerald-400 transition-colors" style={{ height: `${h}%` }}>
+                                            <div className="absolute top-0 w-full h-[2px] bg-emerald-400 shadow-[0_0_10px_#34d399]"></div>
+                                         </div>
+                                      ))}
+                                   </div>
+                                   <p className="text-xs text-slate-300 leading-relaxed border-t border-white/5 pt-3">
+                                      {aiReportConfig.prediction || "AI 模型分析显示，下季度各部门人才密度将呈现稳步上升趋势。"}
+                                   </p>
+                                </div>
+
+                                {/* Risk Radar List */}
+                                <div className="p-6 rounded-3xl bg-[#0F1629]/60 backdrop-blur-xl border border-white/5 relative">
+                                   <h4 className="text-sm font-bold text-white flex items-center gap-2 mb-4"><ShieldAlert size={16} className="text-amber-500" /> 风险预警 (Risks)</h4>
+                                   <div className="space-y-3">
+                                      {aiReportConfig.risks?.slice(0, 3).map((risk, i) => (
+                                         <div key={i} className="flex gap-3 items-start p-3 rounded-xl bg-amber-500/5 border border-amber-500/10 hover:bg-amber-500/10 transition-colors">
+                                            <AlertTriangle size={16} className="text-amber-500 shrink-0 mt-0.5" />
+                                            <div>
+                                               <div className="text-xs font-bold text-amber-200">{risk.title}</div>
+                                               <div className="text-[10px] text-amber-500/80 mt-1">{risk.desc}</div>
                                             </div>
-                                        </div>
-                                        
-                                        <div className="relative z-10">
-                                           <div className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-400 font-sans tabular-nums group-hover:scale-105 transition-transform origin-left">
-                                              {val}
-                                           </div>
-                                           {/* Fake trend indicator for visual flair */}
-                                           <div className="flex items-center gap-1 mt-2 text-[10px] text-emerald-400">
-                                              <TrendingUp size={10} /> 
-                                              <span>实时聚合完成</span>
-                                           </div>
-                                        </div>
-                                    </div>
-                                  );
-                              })
-                           }
+                                         </div>
+                                      )) || <div className="text-xs text-slate-500">暂无高风险项</div>}
+                                   </div>
+                                </div>
+                            </div>
+
+                            {/* COL 2: Main Charts (Pie/Donut) */}
+                            <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
+                                {aiReportConfig.charts
+                                   .filter(c => c.type !== 'stat')
+                                   .slice(0, 4) // Show max 4 charts
+                                   .map((chart, idx) => {
+                                       const data = getAggregatedData(chart) as {name: string, value: number}[];
+                                       const total = data.reduce((acc, curr) => acc + curr.value, 0);
+
+                                       return (
+                                          <div key={chart.id} style={{ animationDelay: `${idx * 150}ms` }} className="bg-[#1E293B]/40 backdrop-blur-md p-6 rounded-3xl border border-white/5 flex flex-col animate-in zoom-in-95 relative overflow-hidden group">
+                                              {/* Hover Glow */}
+                                              <div className="absolute -inset-px bg-gradient-to-r from-transparent via-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
+
+                                              <div className="relative z-10 mb-6 flex items-center justify-between">
+                                                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                                                     {chart.type === 'pie' ? <PieChart size={16} className="text-purple-400"/> : <BarChart3 size={16} className="text-blue-400"/>}
+                                                     {chart.title}
+                                                 </h3>
+                                              </div>
+
+                                              <div className="relative z-10 flex-1 flex items-center justify-center">
+                                                 {chart.type === 'pie' ? (
+                                                     // --- CONIC GRADIENT DONUT ---
+                                                     <div className="flex items-center gap-6 w-full justify-center">
+                                                         <div className="relative w-32 h-32 shrink-0">
+                                                             <div 
+                                                                 className="w-full h-full rounded-full animate-[spin_3s_ease-out]"
+                                                                 style={{
+                                                                     background: `conic-gradient(
+                                                                         ${data.map((d, i) => {
+                                                                             const start = data.slice(0, i).reduce((acc, cur) => acc + cur.value, 0) / total * 100;
+                                                                             const end = start + (d.value / total * 100);
+                                                                             const color = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899'][i % 5];
+                                                                             return `${color} ${start}% ${end}%`;
+                                                                         }).join(', ')}
+                                                                     )`,
+                                                                     mask: 'radial-gradient(transparent 58%, black 59%)',
+                                                                     WebkitMask: 'radial-gradient(transparent 58%, black 59%)'
+                                                                 }}
+                                                             ></div>
+                                                             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                                                                 <span className="text-lg font-bold text-white">{total}</span>
+                                                             </div>
+                                                         </div>
+                                                         <div className="flex flex-col gap-1.5 min-w-[100px]">
+                                                             {data.slice(0, 4).map((item, i) => (
+                                                                 <div key={i} className="flex items-center justify-between text-[11px]">
+                                                                     <div className="flex items-center gap-2">
+                                                                         <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899'][i % 5] }}></div>
+                                                                         <span className="text-slate-300 truncate max-w-[60px]">{item.name}</span>
+                                                                     </div>
+                                                                     <span className="font-mono text-slate-500">{Math.round(item.value / total * 100)}%</span>
+                                                                 </div>
+                                                             ))}
+                                                         </div>
+                                                     </div>
+                                                 ) : (
+                                                     // --- FREQUENCY BAR CHART ---
+                                                     <div className="w-full space-y-3">
+                                                         {data.slice(0, 5).map((item, i) => (
+                                                             <div key={item.name} className="group/bar">
+                                                                 <div className="flex justify-between text-[10px] mb-1">
+                                                                     <span className="text-slate-300">{item.name}</span>
+                                                                     <span className="text-indigo-300 font-mono">{item.value}</span>
+                                                                 </div>
+                                                                 <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden relative">
+                                                                     <div 
+                                                                         style={{ width: `${total > 0 ? (item.value / data[0].value) * 100 : 0}%`, transitionDelay: `${i * 100}ms` }}
+                                                                         className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 relative transition-all duration-1000 ease-out"
+                                                                     ></div>
+                                                                 </div>
+                                                             </div>
+                                                         ))}
+                                                     </div>
+                                                 )}
+                                              </div>
+                                          </div>
+                                       )
+                                   })
+                                }
+                                
+                                {/* Strategic Actions Card (Replaces extra charts) */}
+                                <div className="bg-gradient-to-br from-indigo-900/40 to-slate-900/40 backdrop-blur-md p-6 rounded-3xl border border-indigo-500/20 flex flex-col relative overflow-hidden">
+                                   <div className="absolute top-0 right-0 p-4 opacity-10"><Lightbulb size={64} className="text-white"/></div>
+                                   <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-4 relative z-10"><Target size={16} className="text-indigo-400"/> 决策建议 (Actions)</h3>
+                                   <div className="flex-1 space-y-3 relative z-10">
+                                      {aiReportConfig.suggestions?.slice(0, 3).map((sugg, i) => (
+                                         <div key={i} className="flex gap-3">
+                                            <div className="mt-1 w-1.5 h-1.5 rounded-full bg-indigo-400 shrink-0"></div>
+                                            <div>
+                                               <div className="text-xs font-bold text-indigo-100">{sugg.title}</div>
+                                               <p className="text-[10px] text-indigo-300/80 mt-0.5 leading-relaxed">{sugg.action}</p>
+                                            </div>
+                                         </div>
+                                      ))}
+                                   </div>
+                                </div>
+
+                            </div>
                         </div>
 
-                        {/* Charts Grid */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                           {aiReportConfig.charts
-                              .filter(c => c.type !== 'stat')
-                              .map((chart, idx) => {
-                                  const data = getAggregatedData(chart) as {name: string, value: number}[];
-                                  const total = data.reduce((acc, curr) => acc + curr.value, 0);
-
-                                  return (
-                                     <div key={chart.id} style={{ animationDelay: `${idx * 150}ms` }} className="bg-[#1E293B]/40 backdrop-blur-md p-8 rounded-3xl border border-white/5 flex flex-col animate-in slide-in-from-bottom-4 relative overflow-hidden">
-                                         {/* Grid Background for Chart */}
-                                         <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:20px_20px] opacity-20"></div>
-
-                                         <div className="relative z-10 mb-8 flex items-center justify-between">
-                                            <h3 className="text-base font-bold text-white flex items-center gap-3">
-                                                <div className={`p-2 rounded-lg ${chart.type === 'pie' ? 'bg-purple-500/20 text-purple-400' : 'bg-blue-500/20 text-blue-400'}`}>
-                                                   {chart.type === 'pie' ? <PieChart size={18}/> : <BarChart3 size={18}/>}
-                                                </div>
-                                                {chart.title}
-                                            </h3>
-                                            <div className="text-xs text-slate-500 font-mono">ID: {chart.id.toUpperCase()}</div>
-                                         </div>
-
-                                         <div className="relative z-10 flex-1 flex items-center justify-center">
-                                            {chart.type === 'pie' ? (
-                                                // --- UPGRADED CONIC GRADIENT DONUT CHART ---
-                                                <div className="flex items-center gap-10 w-full justify-center">
-                                                    <div className="relative w-40 h-40 shrink-0">
-                                                        {/* CSS Conic Gradient Ring */}
-                                                        <div 
-                                                            className="w-full h-full rounded-full animate-[spin_3s_ease-out]"
-                                                            style={{
-                                                                background: `conic-gradient(
-                                                                    ${data.map((d, i) => {
-                                                                        const start = data.slice(0, i).reduce((acc, cur) => acc + cur.value, 0) / total * 100;
-                                                                        const end = start + (d.value / total * 100);
-                                                                        const color = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899'][i % 5];
-                                                                        return `${color} ${start}% ${end}%`;
-                                                                    }).join(', ')}
-                                                                )`,
-                                                                mask: 'radial-gradient(transparent 55%, black 56%)',
-                                                                WebkitMask: 'radial-gradient(transparent 55%, black 56%)'
-                                                            }}
-                                                        ></div>
-                                                        {/* Center Text */}
-                                                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                                                            <span className="text-2xl font-bold text-white">{total}</span>
-                                                            <span className="text-[10px] text-slate-400 uppercase">Total</span>
-                                                        </div>
-                                                    </div>
-
-                                                    {/* Legend */}
-                                                    <div className="flex flex-col gap-2 min-w-[120px]">
-                                                        {data.slice(0, 5).map((item, i) => (
-                                                            <div key={i} className="flex items-center justify-between text-xs">
-                                                                <div className="flex items-center gap-2">
-                                                                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899'][i % 5] }}></div>
-                                                                    <span className="text-slate-300 truncate max-w-[80px]">{item.name}</span>
-                                                                </div>
-                                                                <span className="font-mono text-slate-500">{Math.round(item.value / total * 100)}%</span>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                // --- UPGRADED GLOWING BAR CHART ---
-                                                <div className="w-full space-y-4">
-                                                    {data.slice(0, 6).map((item, i) => (
-                                                        <div key={item.name} className="group/bar">
-                                                            <div className="flex justify-between text-xs mb-1.5">
-                                                                <span className="text-slate-300 font-medium">{item.name}</span>
-                                                                <span className="text-indigo-300 font-mono">{item.value}</span>
-                                                            </div>
-                                                            <div className="h-2.5 bg-slate-800/50 rounded-sm overflow-hidden border border-white/5 relative">
-                                                                {/* Background Grid Lines inside bar */}
-                                                                <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent_20%,rgba(255,255,255,0.05)_20%)] bg-[size:20%_100%]"></div>
-                                                                
-                                                                <div 
-                                                                    style={{ width: `${total > 0 ? (item.value / data[0].value) * 100 : 0}%`, transitionDelay: `${i * 100}ms` }}
-                                                                    className="h-full bg-gradient-to-r from-blue-600 to-indigo-500 relative transition-all duration-1000 ease-out group-hover/bar:brightness-110"
-                                                                >
-                                                                    {/* Glow effect at end of bar */}
-                                                                    <div className="absolute right-0 top-0 bottom-0 w-2 bg-white/50 blur-[4px]"></div>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            )}
-                                         </div>
-                                     </div>
-                                  )
-                              })
-                           }
-                        </div>
                       </div>
                   ) : null}
                </div>
