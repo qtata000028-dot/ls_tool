@@ -1,4 +1,3 @@
-
 import { supabase } from './supabaseClient';
 import { dataService } from './dataService';
 
@@ -20,6 +19,7 @@ interface AliyunConfig {
 class AliyunService {
   /**
    * 从数据库获取配置
+   * - 兼容 value 是 jsonb 对象 / string(JSON) 两种情况
    */
   private async getConfig(): Promise<AliyunConfig> {
     const { data, error } = await supabase
@@ -28,17 +28,41 @@ class AliyunService {
       .eq('key', 'aliyun_config')
       .single();
 
-    if (error || !data || !data.value) {
-      console.error("Failed to fetch aliyun_config:", error);
-      throw new Error("系统配置缺失：未找到阿里云 API 配置 (key: aliyun_config)。请联系管理员。");
+    if (error || !data || data.value == null) {
+      console.error('Failed to fetch aliyun_config:', error);
+      throw new Error('系统配置缺失：未找到阿里云 API 配置 (key: aliyun_config)。请联系管理员。');
     }
 
-    const config = data.value;
-    if (!config.apiKey || !config.appId) {
-      throw new Error("系统配置无效：aliyun_config 缺少 apiKey 或 appId。");
+    let config: any = data.value;
+
+    // 如果 value 存的是字符串 JSON（常见于 text）
+    if (typeof config === 'string') {
+      try {
+        config = JSON.parse(config);
+      } catch (e) {
+        throw new Error('系统配置无效：aliyun_config 不是有效的 JSON。');
+      }
+    }
+
+    if (!config?.apiKey || !config?.appId) {
+      throw new Error('系统配置无效：aliyun_config 缺少 apiKey 或 appId。');
     }
 
     return config as AliyunConfig;
+  }
+
+  /**
+   * 仅用于前置检查：是否具备调用极速 ASR 的配置
+   * 防止在无配置环境中盲目录音后才发现无法识别，影响体验
+   */
+  async isFastAsrAvailable(): Promise<boolean> {
+    try {
+      await this.getConfig();
+      return true;
+    } catch (err) {
+      console.warn('Fast ASR unavailable:', err);
+      return false;
+    }
   }
 
   /**
@@ -51,15 +75,29 @@ class AliyunService {
     onFinal: (text: string) => void
   ) {
     const config = await this.getConfig();
+
     // 官方建议使用 stream/v1/audio/recognition，模型取默认极速版本
     const url = `/aliyun-api/stream/v1/audio/recognition`;
 
     this.logUsage('qwen-asr-pro');
 
+    // 根据 blob 类型推断格式（避免 webm 却写 wav）
+    const mime = (audioBlob?.type || '').toLowerCase();
+    const ext =
+      mime.includes('wav') ? 'wav' :
+      mime.includes('mp3') ? 'mp3' :
+      mime.includes('m4a') ? 'm4a' :
+      mime.includes('aac') ? 'aac' :
+      mime.includes('ogg') ? 'ogg' :
+      mime.includes('webm') ? 'webm' :
+      'webm';
+
     const form = new FormData();
-    form.append('file', audioBlob, 'speech.webm');
+    form.append('file', audioBlob, `speech.${ext}`);
+
+    // 你之前用 paraformer-2，这里保持不变
     form.append('model', 'paraformer-2');
-    form.append('format', 'wav');
+    form.append('format', ext);
 
     try {
       const response = await fetch(url, {
@@ -88,20 +126,6 @@ class AliyunService {
     }
   }
 
-  /**
-   * 仅用于前置检查：是否具备调用极速 ASR 的配置
-   * 防止在无配置环境中盲目录音后才发现无法识别，影响体验
-   */
-  async isFastAsrAvailable(): Promise<boolean> {
-    try {
-      await this.getConfig();
-      return true;
-    } catch (err) {
-      console.warn('Fast ASR unavailable:', err);
-      return false;
-    }
-  }
-
   private async logUsage(model: string) {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -109,7 +133,7 @@ class AliyunService {
         await dataService.logActivity(user.id, 'ai_call', model, { provider: 'aliyun' });
       }
     } catch (e) {
-      console.warn("Log failed", e);
+      console.warn('Log failed', e);
     }
   }
 
@@ -119,11 +143,9 @@ class AliyunService {
    */
   async chatStream(messages: ChatMessage[], onChunk: (text: string) => void) {
     const config = await this.getConfig();
-    // 原始地址: https://dashscope.aliyuncs.com/api/v1/apps/...
-    // 代理地址: /aliyun-api/api/v1/apps/...
     const url = `/aliyun-api/api/v1/apps/${config.appId}/completion`;
-    
-    const prompt = messages[messages.length - 1].content;
+
+    const prompt = messages[messages.length - 1]?.content ?? '';
 
     this.logUsage('aliyun-rag-bailian');
 
@@ -131,28 +153,26 @@ class AliyunService {
       const response = await fetch(url, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${config.apiKey}`,
+          Authorization: `Bearer ${config.apiKey}`,
           'Content-Type': 'application/json',
           'X-DashScope-SSE': 'enable',
         },
         body: JSON.stringify({
-          input: { prompt: prompt },
+          input: { prompt },
           parameters: { incremental_output: true },
-          debug: {}
+          debug: {},
         }),
       });
 
       if (!response.ok) await this.handleError(response);
-      if (!response.body) throw new Error("No response body");
+      if (!response.body) throw new Error('No response body');
 
       await this.processStream(response.body, (json) => {
-         // App Completion output format
-         const content = json.output?.text || "";
-         if (content) onChunk(content);
+        const content = json.output?.text || '';
+        if (content) onChunk(content);
       });
-
     } catch (error) {
-      console.error("Aliyun Service Error:", error);
+      console.error('Aliyun Service Error:', error);
       throw error;
     }
   }
@@ -163,14 +183,9 @@ class AliyunService {
    */
   async chatVLStream(messages: VLMessage[], onChunk: (text: string) => void) {
     const config = await this.getConfig();
-    
-    // 原始地址: https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation
-    // 代理地址: /aliyun-api/api/v1/services/aigc/multimodal-generation/generation
     const url = `/aliyun-api/api/v1/services/aigc/multimodal-generation/generation`;
 
-    // 使用 qwen-vl-max (目前最强版本)
-    const MODEL_NAME = "qwen-vl-max"; 
-
+    const MODEL_NAME = 'qwen-vl-max';
     this.logUsage(MODEL_NAME);
 
     console.log(`Calling Aliyun VL API (${MODEL_NAME}) via Vercel Proxy...`);
@@ -179,97 +194,33 @@ class AliyunService {
       const response = await fetch(url, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${config.apiKey}`,
+          Authorization: `Bearer ${config.apiKey}`,
           'Content-Type': 'application/json',
           'X-DashScope-SSE': 'enable',
         },
         body: JSON.stringify({
           model: MODEL_NAME,
-          input: { messages: messages },
-          parameters: { 
+          input: { messages },
+          parameters: {
             incremental_output: true,
-            result_format: "message" 
-          }
+            result_format: 'message',
+          },
         }),
       });
 
-      if (!response.ok) {
-        await this.handleError(response);
-      }
-      if (!response.body) throw new Error("No response body");
+      if (!response.ok) await this.handleError(response);
+      if (!response.body) throw new Error('No response body');
 
       await this.processStream(response.body, (json) => {
-         // VL Generation output format
-         const content = json.output?.choices?.[0]?.message?.content?.[0]?.text || "";
-         if (content) onChunk(content);
+        const content = json.output?.choices?.[0]?.message?.content?.[0]?.text || '';
+        if (content) onChunk(content);
       });
-
     } catch (error) {
-      console.error("Aliyun VL Error Details:", error);
+      console.error('Aliyun VL Error Details:', error);
       throw error;
     }
   }
 
   // --- Helper Methods ---
 
-  private async handleError(response: Response) {
-    let errorMessage = `API 请求失败 (${response.status})`;
-    
-    if (response.status === 504) {
-      throw new Error("请求超时：服务器响应时间过长 (504)。图片可能太大，或 AI 正在深度思考。");
-    }
-
-    try {
-      const errorText = await response.text();
-      console.error("API Error Response Body:", errorText);
-      const errJson = JSON.parse(errorText);
-      errorMessage = errJson.message || errJson.code || response.statusText;
-    } catch (e) {
-      // Ignore json parse error
-    }
-    throw new Error(errorMessage);
-  }
-
-  private async processStream(body: ReadableStream<Uint8Array>, callback: (json: any) => void) {
-      const reader = body.getReader();
-      const decoder = new TextDecoder("utf-8");
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value, { stream: true });
-        buffer += chunk;
-        
-        const lines = buffer.split("\n");
-        if (buffer.endsWith("\n")) {
-            buffer = "";
-        } else {
-            buffer = lines.pop() || ""; 
-        }
-
-        for (const line of lines) {
-          if (line.startsWith("data:")) {
-             const dataStr = line.slice(5).trim();
-             if (dataStr === "" || dataStr === "[DONE]") continue;
-             try {
-               const json = JSON.parse(dataStr);
-               if (json.code && json.message) {
-                 throw new Error(json.message);
-               }
-               callback(json);
-             } catch (e) {
-                if (e instanceof Error && e.message.includes('Unexpected')) {
-                    // Ignore parse error for partial json
-                } else {
-                    throw e;
-                }
-             }
-          }
-        }
-      }
-  }
-}
-
-export const aliyunService = new AliyunService();
+  private asyn
