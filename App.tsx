@@ -7,8 +7,8 @@ import LoginPanel from './src/components/LoginPanel';
 import Dashboard from './src/components/Dashboard';
 import KnowledgeBase from './src/components/KnowledgeBase';
 import ToolsPlatform from './src/components/ToolsPlatform';
-import AIRecon from './src/components/AIRecon'; // Import AI Vision Hub
-import AISprite from './src/components/AISprite'; // Import AI Sprite Assistant
+import AIRecon from './src/components/AIRecon'; 
+import AISprite from './src/components/AISprite'; 
 import { User } from '@supabase/supabase-js';
 import { Announcement, Profile } from './types';
 
@@ -17,27 +17,22 @@ const App: React.FC = () => {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
-  const [currentView, setCurrentView] = useState('dashboard'); // 'dashboard' | 'knowledge' | 'tools' | 'learning' | 'vision'
+  const [currentView, setCurrentView] = useState('dashboard'); 
+  const [aiParams, setAiParams] = useState<any>(null); // NEW: Store params from AI Sprite
 
-  // Function to refresh profile (e.g., after avatar upload)
   const fetchProfile = async (userId: string) => {
     const userProfile = await dataService.getUserProfile(userId);
     setProfile(userProfile);
   };
 
   const forceLogout = async () => {
-    console.warn("Forcing logout due to session error...");
     try {
       localStorage.removeItem('supabase.auth.token');
-      // Clearing local storage keys that Supabase might use
       for (const key in localStorage) {
-        if (key.startsWith('sb-')) {
-            localStorage.removeItem(key);
-        }
+        if (key.startsWith('sb-')) localStorage.removeItem(key);
       }
       await supabase.auth.signOut();
     } catch (e) {
-      // ignore
     } finally {
       setUser(null);
       setProfile(null);
@@ -46,15 +41,10 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
-    // GLOBAL ERROR HANDLER for unhandled promise rejections (often from Supabase client internals)
     const handleRejection = (event: PromiseRejectionEvent) => {
       const msg = event.reason?.message || JSON.stringify(event.reason) || "";
-      // Catch "Invalid Refresh Token" or "refresh_token_not_found"
-      if (
-        typeof msg === 'string' && 
-        (msg.includes("Refresh Token") || msg.includes("refresh_token_not_found") || msg.includes("JWT expired"))
-      ) {
-        event.preventDefault(); // Prevent console spam
+      if (typeof msg === 'string' && (msg.includes("Refresh Token") || msg.includes("refresh_token_not_found") || msg.includes("JWT expired"))) {
+        event.preventDefault(); 
         forceLogout();
       }
     };
@@ -62,20 +52,14 @@ const App: React.FC = () => {
 
     const initSession = async () => {
       try {
-        // 1. Check active session
         const { data: { session }, error } = await supabase.auth.getSession();
-        
         if (error) {
-           console.warn("Session check error:", error.message);
-           // Robustly handle refresh token errors by forcing sign out
            if (error.message.includes("Refresh Token") || error.message.includes("refresh_token_not_found")) {
              await forceLogout();
            }
         } else {
           setUser(session?.user ?? null);
-          if (session?.user) {
-            fetchProfile(session.user.id);
-          }
+          if (session?.user) fetchProfile(session.user.id);
         }
       } catch (err) {
         console.error("Auth init failed:", err);
@@ -86,24 +70,17 @@ const App: React.FC = () => {
 
     initSession();
 
-    // 2. Listen for auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
-      // console.log("Auth Event:", event);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
         setUser(null);
         setProfile(null);
         setCurrentView('dashboard');
       } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         setUser(session?.user ?? null);
-        if (session?.user) {
-          fetchProfile(session.user.id);
-        }
+        if (session?.user) fetchProfile(session.user.id);
       }
     });
 
-    // 3. Fetch public data
     const fetchData = async () => {
       const activeAnnouncements = await dataService.getActiveAnnouncements();
       setAnnouncements(activeAnnouncements);
@@ -123,19 +100,13 @@ const App: React.FC = () => {
     setCurrentView('dashboard');
   };
 
-  const handleNavigate = (view: string) => {
-    // Routing Logic
-    if (view === 'knowledge') {
-      setCurrentView('knowledge');
-    } else if (view === 'tools') {
-      setCurrentView('tools');
-    } else if (view === 'vision') {
-      setCurrentView('vision'); // Navigate to Vision Hub
-    } else if (view === 'learning') {
-       alert("模块开发中...");
-       return; 
+  // Updated Navigation Handler to accept params
+  const handleNavigate = (view: string, params?: any) => {
+    setCurrentView(view);
+    if (params) {
+       setAiParams(params);
     } else {
-      setCurrentView('dashboard');
+       setAiParams(null); // Clear params if simple navigation
     }
   };
 
@@ -152,12 +123,10 @@ const App: React.FC = () => {
       <Background />
       
       {!user ? (
-        // GUEST VIEW: Centered Login Panel
         <div className="relative z-10 min-h-screen flex flex-col items-center justify-center p-4">
-          <LoginPanel onSuccess={() => {/* Auth state change handles redirect via listener */}} />
+          <LoginPanel onSuccess={() => {}} />
         </div>
       ) : (
-        // AUTHENTICATED VIEW
         <div className="relative z-10 flex flex-col min-h-screen">
           <Navbar 
             user={user} 
@@ -182,7 +151,10 @@ const App: React.FC = () => {
             )}
 
             {currentView === 'tools' && (
-              <ToolsPlatform onBack={() => setCurrentView('dashboard')} />
+              <ToolsPlatform 
+                 onBack={() => setCurrentView('dashboard')} 
+                 aiParams={aiParams} // Pass params to tools
+              />
             )}
 
             {currentView === 'vision' && (
@@ -190,7 +162,6 @@ const App: React.FC = () => {
             )}
           </main>
 
-          {/* GLOBAL AI ASSISTANT SPRITE */}
           <AISprite onNavigate={handleNavigate} />
         </div>
       )}

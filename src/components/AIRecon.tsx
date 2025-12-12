@@ -7,6 +7,117 @@ interface AIReconProps {
   onBack: () => void;
 }
 
+// --- Sub-Components Defined Outside to Prevent Re-render Focus Loss ---
+
+const ActionBar = ({ 
+  className = "", 
+  promptInput, 
+  setPromptInput, 
+  handleAnalyze, 
+  isRecording, 
+  toggleRecording, 
+  isAnalyzing, 
+  uploadedFile 
+}: any) => (
+  <div className={`flex flex-col gap-3 ${className}`}>
+      {/* Row 1: Input + Mic */}
+      <div className="flex items-center gap-3 w-full">
+          <div className={`flex-1 flex items-center bg-black/40 rounded-xl border px-3 py-2.5 transition-all duration-300 ${isRecording ? 'border-red-500/80 shadow-[0_0_15px_rgba(239,68,68,0.4)] bg-red-950/20' : 'border-white/10 focus-within:border-indigo-500/50'}`}>
+              <input 
+              type="text" 
+              value={promptInput}
+              onChange={(e) => setPromptInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
+              placeholder={isRecording ? "正在听..." : "输入指令..."}
+              className="flex-1 bg-transparent border-none text-sm text-white placeholder-slate-500 focus:ring-0 px-0 min-w-0"
+              disabled={isAnalyzing}
+              autoFocus
+              />
+              <button 
+                  onClick={toggleRecording}
+                  className={`p-2 rounded-lg transition-all ml-2 shrink-0 flex items-center justify-center ${
+                      isRecording 
+                      ? 'text-white bg-red-500 animate-pulse' 
+                      : 'text-slate-400 hover:text-white hover:bg-white/10'
+                  }`}
+              >
+                  {isRecording ? <StopCircle size={18} className="fill-current"/> : <Mic size={18} />}
+              </button>
+          </div>
+      </div>
+
+      {/* Row 2: Action Button */}
+      <button 
+          onClick={handleAnalyze}
+          disabled={!uploadedFile || isAnalyzing}
+          className={`flex items-center justify-center gap-2 w-full px-6 py-3 rounded-xl font-bold text-sm transition-all ${
+              !uploadedFile 
+              ? 'bg-slate-800 text-slate-500 cursor-not-allowed' 
+              : isAnalyzing 
+                  ? 'bg-indigo-600/50 text-indigo-200 cursor-wait'
+                  : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-[0_0_20px_rgba(79,70,229,0.4)] hover:shadow-[0_0_30px_rgba(79,70,229,0.6)] active:scale-[0.98]'
+          }`}
+      >
+          {isAnalyzing ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
+          <span>{isAnalyzing ? 'AI 深度分析中...' : '开始识别'}</span>
+      </button>
+  </div>
+);
+
+const AnalysisResultContent = ({ 
+  promptInput, 
+  isDesktop, 
+  isAnalyzing, 
+  analysisText, 
+  statusText, 
+  errorMsg, 
+  handleAnalyze,
+  resultEndRef 
+}: any) => (
+  <div className="space-y-4">
+      {promptInput && isDesktop && (
+          <div className="p-3 rounded-lg bg-white/5 border border-white/5">
+          <p className="text-xs text-slate-500 mb-1">您的指令</p>
+          <p className="text-sm text-slate-300">"{promptInput}"</p>
+          </div>
+      )}
+      
+      {isAnalyzing && !analysisText && (
+          <div className="flex items-center gap-3 text-sm text-indigo-300 p-4 rounded-xl bg-indigo-500/10 border border-indigo-500/20">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          <span>{statusText || "AI 正在思考..."}</span>
+          </div>
+      )}
+
+      {errorMsg ? (
+          <div className="flex flex-col items-center justify-center py-10 text-center gap-4 animate-in zoom-in-95">
+              <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center text-red-400">
+                  <AlertTriangle size={24} />
+              </div>
+              <div className="space-y-1">
+                  <p className="text-white font-medium">任务中断</p>
+                  <p className="text-xs text-red-400 px-4 leading-relaxed">{errorMsg}</p>
+                  <button onClick={handleAnalyze} className="mt-4 px-4 py-1.5 text-xs bg-white/10 hover:bg-white/20 rounded-full transition-colors">
+                  重试
+                  </button>
+              </div>
+          </div>
+      ) : (
+          <div className="prose prose-invert prose-sm max-w-none">
+              <p className="text-slate-300 leading-relaxed whitespace-pre-wrap text-base md:text-sm">{analysisText}</p>
+              {isAnalyzing && analysisText && (
+                  <div className="flex gap-1.5 pt-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
+                      <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse delay-150"></span>
+                      <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse delay-300"></span>
+                  </div>
+              )}
+          </div>
+      )}
+      <div ref={resultEndRef} />
+  </div>
+);
+
 const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
   // --- Device Detection ---
   const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 768);
@@ -233,98 +344,6 @@ const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
     if (abortControllerRef.current) abortControllerRef.current.abort();
   };
 
-  // --- Sub-Components for Cleanliness ---
-
-  const ActionBar = ({ className = "" }) => (
-    <div className={`flex flex-col gap-3 ${className}`}>
-        {/* Row 1: Input + Mic */}
-        <div className="flex items-center gap-3 w-full">
-            <div className={`flex-1 flex items-center bg-black/40 rounded-xl border px-3 py-2.5 transition-all duration-300 ${isRecording ? 'border-red-500/80 shadow-[0_0_15px_rgba(239,68,68,0.4)] bg-red-950/20' : 'border-white/10 focus-within:border-indigo-500/50'}`}>
-                <input 
-                type="text" 
-                value={promptInput}
-                onChange={(e) => setPromptInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
-                placeholder={isRecording ? "正在听..." : "输入指令..."}
-                className="flex-1 bg-transparent border-none text-sm text-white placeholder-slate-500 focus:ring-0 px-0 min-w-0"
-                disabled={isAnalyzing}
-                />
-                <button 
-                    onClick={toggleRecording}
-                    className={`p-2 rounded-lg transition-all ml-2 shrink-0 flex items-center justify-center ${
-                        isRecording 
-                        ? 'text-white bg-red-500 animate-pulse' 
-                        : 'text-slate-400 hover:text-white hover:bg-white/10'
-                    }`}
-                >
-                    {isRecording ? <StopCircle size={18} className="fill-current"/> : <Mic size={18} />}
-                </button>
-            </div>
-        </div>
-
-        {/* Row 2: Action Button */}
-        <button 
-            onClick={handleAnalyze}
-            disabled={!uploadedFile || isAnalyzing}
-            className={`flex items-center justify-center gap-2 w-full px-6 py-3 rounded-xl font-bold text-sm transition-all ${
-                !uploadedFile 
-                ? 'bg-slate-800 text-slate-500 cursor-not-allowed' 
-                : isAnalyzing 
-                    ? 'bg-indigo-600/50 text-indigo-200 cursor-wait'
-                    : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-[0_0_20px_rgba(79,70,229,0.4)] hover:shadow-[0_0_30px_rgba(79,70,229,0.6)] active:scale-[0.98]'
-            }`}
-        >
-            {isAnalyzing ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
-            <span>{isAnalyzing ? 'AI 深度分析中...' : '开始识别'}</span>
-        </button>
-    </div>
-  );
-
-  const AnalysisResultContent = () => (
-    <div className="space-y-4">
-        {promptInput && isDesktop && (
-            <div className="p-3 rounded-lg bg-white/5 border border-white/5">
-            <p className="text-xs text-slate-500 mb-1">您的指令</p>
-            <p className="text-sm text-slate-300">"{promptInput}"</p>
-            </div>
-        )}
-        
-        {isAnalyzing && !analysisText && (
-            <div className="flex items-center gap-3 text-sm text-indigo-300 p-4 rounded-xl bg-indigo-500/10 border border-indigo-500/20">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            <span>{statusText || "AI 正在思考..."}</span>
-            </div>
-        )}
-
-        {errorMsg ? (
-            <div className="flex flex-col items-center justify-center py-10 text-center gap-4 animate-in zoom-in-95">
-                <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center text-red-400">
-                    <AlertTriangle size={24} />
-                </div>
-                <div className="space-y-1">
-                    <p className="text-white font-medium">任务中断</p>
-                    <p className="text-xs text-red-400 px-4 leading-relaxed">{errorMsg}</p>
-                    <button onClick={handleAnalyze} className="mt-4 px-4 py-1.5 text-xs bg-white/10 hover:bg-white/20 rounded-full transition-colors">
-                    重试
-                    </button>
-                </div>
-            </div>
-        ) : (
-            <div className="prose prose-invert prose-sm max-w-none">
-                <p className="text-slate-300 leading-relaxed whitespace-pre-wrap text-base md:text-sm">{analysisText}</p>
-                {isAnalyzing && analysisText && (
-                    <div className="flex gap-1.5 pt-2">
-                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
-                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse delay-150"></span>
-                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse delay-300"></span>
-                    </div>
-                )}
-            </div>
-        )}
-        <div ref={resultEndRef} />
-    </div>
-  );
-
   // --- Main Render ---
   return (
     <div className="w-full h-[calc(100dvh-110px)] max-w-[1600px] mx-auto bg-[#020617] border border-white/10 rounded-3xl overflow-hidden shadow-2xl flex flex-col md:flex-row animate-in fade-in zoom-in-95 duration-500 relative">
@@ -394,7 +413,15 @@ const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
                         <div className="h-4 w-[1px] bg-white/10"></div>
                         <span className="text-sm font-bold text-white">AI 视觉分析</span>
                     </div>
-                    <ActionBar />
+                    <ActionBar 
+                        promptInput={promptInput}
+                        setPromptInput={setPromptInput}
+                        handleAnalyze={handleAnalyze}
+                        isRecording={isRecording}
+                        toggleRecording={toggleRecording}
+                        isAnalyzing={isAnalyzing}
+                        uploadedFile={uploadedFile}
+                    />
                 </div>
             </div>
          )}
@@ -429,13 +456,31 @@ const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
                         <p className="text-sm">上传图片并输入指令以开始</p>
                     </div>
                 ) : (
-                    <AnalysisResultContent />
+                    <AnalysisResultContent 
+                        promptInput={promptInput}
+                        isDesktop={isDesktop}
+                        isAnalyzing={isAnalyzing}
+                        analysisText={analysisText}
+                        statusText={statusText}
+                        errorMsg={errorMsg}
+                        handleAnalyze={handleAnalyze}
+                        resultEndRef={resultEndRef}
+                    />
                 )}
              </div>
 
              {/* Footer: Fixed Control Bar */}
              <div className="p-4 border-t border-white/5 bg-[#0a0f1e]">
-                <ActionBar className="w-full" />
+                <ActionBar 
+                    className="w-full" 
+                    promptInput={promptInput}
+                    setPromptInput={setPromptInput}
+                    handleAnalyze={handleAnalyze}
+                    isRecording={isRecording}
+                    toggleRecording={toggleRecording}
+                    isAnalyzing={isAnalyzing}
+                    uploadedFile={uploadedFile}
+                />
              </div>
           </div>
       ) : (
@@ -462,7 +507,16 @@ const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
              </div>
 
              <div className="flex-1 overflow-y-auto p-6 pb-24">
-                <AnalysisResultContent />
+                <AnalysisResultContent 
+                    promptInput={promptInput}
+                    isDesktop={isDesktop}
+                    isAnalyzing={isAnalyzing}
+                    analysisText={analysisText}
+                    statusText={statusText}
+                    errorMsg={errorMsg}
+                    handleAnalyze={handleAnalyze}
+                    resultEndRef={resultEndRef}
+                />
              </div>
              
              {/* Mobile Sheet Footer (Optional, mostly empty as controls are behind sheet) */}
