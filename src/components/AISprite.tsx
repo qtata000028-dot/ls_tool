@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Bot, Mic, Send, X, Sparkles, MicOff, Zap, BarChart3 } from 'lucide-react';
+import { Bot, Mic, Send, X, Sparkles, MicOff, Zap, BarChart3, AlertTriangle, Gauge } from 'lucide-react';
+import { aliyunService } from '../services/aliyunService';
 
 interface AISpriteProps {
   onNavigate: (view: string, params?: any) => void;
@@ -13,13 +14,20 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
   const [feedback, setFeedback] = useState('');
   const [isWakeWordDetected, setIsWakeWordDetected] = useState(false);
 
-  const recognitionRef = useRef<any>(null);
-  const isListeningRef = useRef(false);
+  // cloud asr
+  const [isCloudBusy, setIsCloudBusy] = useState(false);
+  const [recorderReady, setRecorderReady] = useState(false);
 
+  const recognitionRef = useRef<any>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const modeRef = useRef<'cloud' | 'browser' | null>(null);
+
+  const isListeningRef = useRef(false);
   const synthRef = useRef<SpeechSynthesis | null>(null);
   const feedbackTimeoutRef = useRef<number | null>(null);
 
-  // Wake word runtime state (avoid stale closures)
+  // wake-word runtime state
   const isWakeWordActiveRef = useRef(false);
   const wakeWordTimerRef = useRef<number | null>(null);
   const commandBufferRef = useRef<string>('');
@@ -29,7 +37,6 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
   const speak = (text: string) => {
     try {
       if (!synthRef.current) return;
-      // 某些浏览器需要用户先有一次交互才允许播放，点击开启监听后就满足了
       synthRef.current.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = 'zh-CN';
@@ -53,27 +60,24 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       .trim()
       .toLowerCase();
 
-  // ✅ 唤醒词：支持「小朗小朗」被识别成「小浪小浪/小狼小狼/小郎小郎/小廊小廊」
-  // 如果你只想“双唤醒”，就保持只用 double；如果想支持单唤醒，把 single 也打开
-  const doubleWakeTest = /小[朗浪狼郎廊]\s*小[朗浪狼郎廊]/; // 注意：不加 g，避免 test() lastIndex 问题
-  // const singleWakeTest = /小[朗浪狼郎廊]/;
-
+  // ✅ 唤醒词：双唤醒（小朗小朗）兼容误识别：小浪小浪/小狼小狼/小郎小郎/小廊小廊
+  // 只双唤醒：默认启用 double
+  const doubleWakeTest = /小[朗浪狼郎廊]\s*小[朗浪狼郎廊]/;
   const doubleWakeStrip = /小[朗浪狼郎廊]\s*小[朗浪狼郎廊]/g;
-  // const singleWakeStrip = /小[朗浪狼郎廊]/g;
+
+  // 可选：如果你也想支持英文/拼音（可按需打开）
+  const pinyinDoubleWakeTest = /xiao\s*lang\s*xiao\s*lang|xiaolang\s*xiaolang/i;
+  const pinyinDoubleWakeStrip = /xiao\s*lang\s*xiao\s*lang|xiaolang\s*xiaolang/gi;
 
   const detectWakeWord = (text: string) => {
     const t = (text || '').replace(/\s+/g, '');
-    // 只双唤醒
-    return doubleWakeTest.test(t);
-    // 双+单唤醒
-    // return doubleWakeTest.test(t) || singleWakeTest.test(t);
+    return doubleWakeTest.test(t) || pinyinDoubleWakeTest.test(t);
   };
 
   const stripWakeWord = (text: string) => {
     let t = normalize(text);
     t = t.replace(doubleWakeStrip, ' ');
-    // 需要单唤醒再打开：
-    // t = t.replace(singleWakeStrip, ' ');
+    t = t.replace(pinyinDoubleWakeStrip, ' ');
     return t.replace(/\s+/g, ' ').trim();
   };
 
@@ -140,13 +144,13 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
 
   /**
    * 语音入口：实时处理
-   * - 未唤醒：只找唤醒词（interim最快）
+   * - 未唤醒：只找唤醒词（partial/interim 越快越好）
    * - 已唤醒：收集命令，final 时执行
    * - 支持“一口气说完”：小朗小朗 打开知识库
    */
   const handleVoiceStream = (transcript: string, isFinal: boolean) => {
     const now = Date.now();
-    if (now - lastResultAtRef.current < 40) return; // 简单去抖
+    if (now - lastResultAtRef.current < 40) return;
     lastResultAtRef.current = now;
 
     const raw = transcript || '';
@@ -158,17 +162,20 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       if (detectWakeWord(normalized)) {
         isWakeWordActiveRef.current = true;
         setIsWakeWordDetected(true);
+
+        // ✅ 你要的“我在”
         showFeedback('我在：请说出指令（如：打开知识库 / 分析学历分布）');
         speak('我在，请说出指令');
+
         armWakeWordTimeout();
 
-        // 如果唤醒词后面已经跟了内容，作为命令 tail
+        // 唤醒词后面跟了内容，作为命令 tail
         const tail = stripWakeWord(normalized);
         if (tail) {
           commandBufferRef.current = tail;
           setCapturedSpeech(tail);
 
-          // 如果这次是 final，直接执行（支持“一口气说完”）
+          // final 直接执行（一口气说完）
           if (isFinal) {
             const cmd = tail.replace(/确认|执行/g, '').trim();
             executeCommand(cmd);
@@ -182,7 +189,6 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     // 2) 已唤醒：收集命令
     armWakeWordTimeout();
 
-    // 允许说“取消/停止”
     if (normalized.includes('取消') || normalized.includes('停止')) {
       resetWakeWordState();
       showFeedback('已取消');
@@ -207,16 +213,120 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     resetWakeWordState();
   };
 
-  // ===== Init Speech Recognition =====
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
+  // ===== Cloud ASR (Aliyun) =====
+  const transcribeWithAliyun = async (audioBlob: Blob) => {
+    setIsCloudBusy(true);
+    showFeedback('云端极速识别中...');
 
-    synthRef.current = window.speechSynthesis || null;
+    try {
+      let finalText = '';
 
-    if (!('webkitSpeechRecognition' in window)) {
-      showFeedback('浏览器不支持语音（请用 Chrome）');
-      return;
+      await aliyunService.fastSpeechToText(
+        audioBlob,
+        (partial: string) => {
+          const clean = (partial || '').replace(/\s+/g, ' ').trim();
+          if (clean) {
+            // 预览
+            setCapturedSpeech(clean.slice(0, 180));
+            // partial 也喂给唤醒检测，尽量做到“实时我在”
+            handleVoiceStream(clean, false);
+          }
+        },
+        (finalResult: string) => {
+          finalText = (finalResult || '').trim();
+        }
+      );
+
+      const text = finalText.trim();
+      if (text) {
+        setCapturedSpeech(text.slice(0, 180));
+        handleVoiceStream(text, true);
+      } else {
+        showFeedback('未捕获到语音内容');
+      }
+    } catch (err) {
+      console.error(err);
+      showFeedback('云端识别失败，已回退浏览器识别');
+      speak('云端识别失败，我将使用浏览器识别');
+
+      // fallback to browser recognition
+      try {
+        if (recognitionRef.current) {
+          recognitionRef.current.stop?.();
+        }
+      } catch {
+        // ignore
+      }
+    } finally {
+      setIsCloudBusy(false);
     }
+  };
+
+  const stopRecording = () => {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder) return;
+    try {
+      recorder.stop();
+    } catch (err) {
+      console.warn('Recorder stop error', err);
+    }
+
+    setIsListening(false);
+    isListeningRef.current = false;
+  };
+
+  const startRecording = async () => {
+    if (!navigator.mediaDevices?.getUserMedia || !(window as any).MediaRecorder) {
+      setRecorderReady(false);
+      return false;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      // 一些浏览器对 mimeType 支持不同，这里做个兜底
+      const preferMime = 'audio/webm';
+      const recorder = new MediaRecorder(stream, {
+        mimeType: preferMime,
+        audioBitsPerSecond: 128000,
+      });
+
+      audioChunksRef.current = [];
+
+      recorder.ondataavailable = (evt) => {
+        if (evt.data && evt.data.size > 0) audioChunksRef.current.push(evt.data);
+      };
+
+      recorder.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(audioChunksRef.current, { type: preferMime });
+        if (blob.size > 0) transcribeWithAliyun(blob);
+      };
+
+      recorder.start();
+      mediaRecorderRef.current = recorder;
+
+      setIsListening(true);
+      isListeningRef.current = true;
+      resetWakeWordState();
+
+      showFeedback('录音中：说“小朗小朗”我会回应“我在”');
+      // 这里也可以不播报，避免打断用户；你想播就留着
+      // speak('开始录音，请说小朗小朗唤醒我');
+
+      return true;
+    } catch (err) {
+      console.error(err);
+      showFeedback('麦克风不可用，请检查权限');
+      setRecorderReady(false);
+      return false;
+    }
+  };
+
+  // ===== Browser SpeechRecognition =====
+  const initBrowserRecognition = () => {
+    if (typeof window === 'undefined') return null;
+    if (!('webkitSpeechRecognition' in window)) return null;
 
     const SpeechRecognition = (window as any).webkitSpeechRecognition;
     const recognition = new SpeechRecognition();
@@ -237,7 +347,6 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
         else interimTranscript += txt;
       }
 
-      // 仅用于界面预览（避免无限增长）
       const preview = normalize(`${finalTranscript} ${interimTranscript}`).slice(0, 180);
       if (preview) setCapturedSpeech(preview);
 
@@ -246,12 +355,11 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     };
 
     recognition.onend = () => {
-      // Chrome 有时会自己停：如果我们仍处在监听状态，就自动重启
-      if (isListeningRef.current) {
+      if (isListeningRef.current && modeRef.current === 'browser') {
         try {
           recognition.start();
         } catch {
-          // ignore already started
+          // ignore
         }
       }
     };
@@ -274,7 +382,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
         return;
       }
 
-      if (event.error === 'no-speech') return; // 避免刷屏
+      if (event.error === 'no-speech') return;
       if (event.error === 'audio-capture') {
         showFeedback('未检测到麦克风设备');
         return;
@@ -287,14 +395,32 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       showFeedback('语音识别异常，请重试');
     };
 
-    recognitionRef.current = recognition;
+    return recognition;
+  };
+
+  // ===== Init =====
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    synthRef.current = window.speechSynthesis || null;
+    setRecorderReady(!!(window as any).MediaRecorder);
+
+    const rec = initBrowserRecognition();
+    if (rec) recognitionRef.current = rec;
 
     return () => {
       try {
-        recognition.stop();
+        recognitionRef.current?.stop?.();
       } catch {
         // ignore
       }
+
+      try {
+        mediaRecorderRef.current?.stop?.();
+      } catch {
+        // ignore
+      }
+
       if (feedbackTimeoutRef.current) window.clearTimeout(feedbackTimeoutRef.current);
       if (wakeWordTimerRef.current) window.clearTimeout(wakeWordTimerRef.current);
     };
@@ -316,23 +442,28 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
   const toggleListening = async (e: React.MouseEvent) => {
     e.stopPropagation();
 
-    if (!recognitionRef.current) {
-      showFeedback('浏览器不支持语音（请使用 Chrome）');
-      return;
-    }
-
-    if (!navigator.mediaDevices?.getUserMedia) {
-      showFeedback('当前环境无法访问麦克风');
-      return;
-    }
-
-    // 关闭监听
+    // ===== Stop =====
     if (isListening) {
-      try {
-        recognitionRef.current.stop();
-      } catch {
-        // ignore
+      if (modeRef.current === 'cloud' && mediaRecorderRef.current) {
+        stopRecording();
+        showFeedback('已停止录音，正在识别...');
+        return;
       }
+
+      if (modeRef.current === 'browser' && recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {
+          // ignore
+        }
+        setIsListening(false);
+        isListeningRef.current = false;
+        resetWakeWordState();
+        showFeedback('语音已关闭');
+        return;
+      }
+
+      // unknown mode fallback
       setIsListening(false);
       isListeningRef.current = false;
       resetWakeWordState();
@@ -340,10 +471,30 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       return;
     }
 
-    // 开启监听：先请求权限（必须用户手势）
+    // ===== Start =====
+    if (!navigator.mediaDevices?.getUserMedia) {
+      showFeedback('当前环境无法访问麦克风');
+      return;
+    }
+
+    // 优先：云端极速（有 MediaRecorder）
+    if (recorderReady && !isCloudBusy) {
+      modeRef.current = 'cloud';
+      const ok = await startRecording();
+      if (ok) return;
+      // 若失败继续 fallback
+    }
+
+    // fallback：浏览器识别（webkitSpeechRecognition）
+    if (!recognitionRef.current) {
+      showFeedback('浏览器不支持语音（请使用 Chrome）');
+      return;
+    }
+
     try {
       await navigator.mediaDevices.getUserMedia({ audio: true });
 
+      modeRef.current = 'browser';
       resetWakeWordState();
       setCapturedSpeech('');
 
@@ -356,8 +507,8 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       setIsListening(true);
       isListeningRef.current = true;
 
-      showFeedback('监听中：请说“小朗小朗”唤醒（也支持识别成“小浪小浪”）');
-      speak('我在听，请说小朗小朗唤醒我');
+      showFeedback('监听中：请说“小朗小朗”（可误识别为“小浪小浪”）');
+      // speak('我在听，请说小朗小朗唤醒我'); // 可选：开播报
     } catch (err) {
       console.warn('语音启动失败', err);
       showFeedback('语音启动失败，请确认麦克风权限');
@@ -367,11 +518,11 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
   return (
     <div className="fixed bottom-8 right-8 z-[9999] flex flex-col items-end gap-4 pointer-events-none">
       {/* Feedback Bubble */}
-      {(feedback || (isListening && !isOpen)) && (
+      {(feedback || (isListening && !isOpen) || isCloudBusy) && (
         <div className="pointer-events-auto mr-2 animate-in slide-in-from-bottom-2 fade-in duration-300">
           <div
             className={`
-              backdrop-blur-xl border text-sm px-4 py-2 rounded-2xl rounded-tr-none shadow-lg max-w-[240px]
+              backdrop-blur-xl border text-sm px-4 py-2 rounded-2xl rounded-tr-none shadow-lg max-w-[260px]
               ${
                 feedback.includes('不安全') || feedback.includes('HTTPS')
                   ? 'bg-red-500/20 border-red-500/30 text-red-200'
@@ -379,7 +530,14 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
               }
            `}
           >
-            {feedback || (isListening ? 'Listening...' : '')}
+            {isCloudBusy ? (
+              <span className="inline-flex items-center gap-2">
+                <Gauge size={14} className="animate-pulse" />
+                云端极速识别中...
+              </span>
+            ) : (
+              feedback || (isListening ? 'Listening...' : '')
+            )}
           </div>
         </div>
       )}
@@ -414,11 +572,23 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
               </form>
 
               <div className="flex flex-col gap-1 text-[10px] text-slate-400 bg-white/5 border border-white/5 rounded-xl px-3 py-2">
-                <div className="flex items-center gap-2">
-                  <div className={`w-2 h-2 rounded-full ${isListening ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}`} />
-                  <span className="font-medium text-white/70">
-                    {isListening ? '监听中：说“小朗小朗”（允许误识别为“小浪小浪”）' : '点击麦克风开启监听（需要权限）'}
-                  </span>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full ${isListening ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}`} />
+                    <span className="font-medium text-white/70">
+                      {isListening ? '监听中：说“小朗小朗”（可识别成“小浪小浪”）' : '点击麦克风开启监听（需要权限）'}
+                    </span>
+                  </div>
+
+                  {recorderReady ? (
+                    <span className="flex items-center gap-1 text-[10px] px-2 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-200">
+                      <Gauge size={10} /> 极速ASR
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1 text-[10px] px-2 py-1 rounded-full bg-yellow-500/10 border border-yellow-500/30 text-yellow-200">
+                      <AlertTriangle size={10} /> 无录音器
+                    </span>
+                  )}
                 </div>
 
                 {capturedSpeech && (
@@ -467,7 +637,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
               }`}
             >
               {isListening ? <Mic size={14} className="animate-pulse" /> : <MicOff size={14} />}
-              <span className="text-[10px] font-medium">{isListening ? '点击关闭监听' : '点击开启监听'}</span>
+              <span className="text-[10px] font-medium">{isListening ? '点击停止 / 识别' : '点击开始监听'}</span>
             </div>
           </div>
         </div>
@@ -482,7 +652,6 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
             ${isWakeWordDetected ? 'bg-emerald-500/50 scale-125 opacity-100' : ''}
          `}
         />
-
         <div
           className={`
             relative w-14 h-14 rounded-full flex items-center justify-center
