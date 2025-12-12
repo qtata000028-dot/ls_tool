@@ -150,6 +150,108 @@ const ToolsPlatform: React.FC<ToolsPlatformProps> = ({ onBack, aiParams }) => {
   // Recruitment Trend Data (Calculated)
   const [recruitmentTrend, setRecruitmentTrend] = useState<{year: string, count: number}[]>([]);
 
+  // Smart Preset Queries & Data Quality
+  const smartQueryPresets = useMemo(() => [
+    { label: '学历与岗位匹配度', query: '分析各部门学历结构与核心岗位匹配度，并标记风险部门' },
+    { label: '离职与绩效预警', query: '结合入职年限和状态，识别离职风险最高的部门及原因' },
+    { label: '人才补给缺口', query: '根据近五年入职趋势，预测明年需要补充的人才岗位与数量' },
+    { label: '电话/信息缺失修复', query: '找出信息缺失严重的部门并给出数据治理优先级' },
+  ], []);
+
+  const dataQualityMetrics = useMemo(() => {
+    const total = employees.length || 1;
+    const phoneFilled = employees.filter(e => !!e.p_emp_phone).length;
+    const degreeFilled = employees.filter(e => !!e.p_emp_degree).length;
+    const joinDateFilled = employees.filter(e => !!e.P_emp_workJoindt).length;
+
+    return [
+      {
+        title: '联系方式完整度',
+        value: Math.round((phoneFilled / total) * 100),
+        desc: `${phoneFilled}/${total} 有电话记录`,
+        accent: 'from-emerald-500/20 to-emerald-500/0',
+      },
+      {
+        title: '学历信息完整度',
+        value: Math.round((degreeFilled / total) * 100),
+        desc: `${degreeFilled}/${total} 有学历`,
+        accent: 'from-blue-500/20 to-blue-500/0',
+      },
+      {
+        title: '入职时间覆盖度',
+        value: Math.round((joinDateFilled / total) * 100),
+        desc: `${joinDateFilled}/${total} 有入职日期`,
+        accent: 'from-amber-500/20 to-amber-500/0',
+      },
+    ];
+  }, [employees]);
+
+  // Local heuristic insights for a smarter-looking analysis UI
+  const localInsights = useMemo(() => {
+    if (!employees.length) return [];
+
+    const deptCounts = employees.reduce<Record<string, number>>((acc, emp) => {
+      const name = departments.find(d => String(d.Departmentid) === String(emp.Departmentid))?.departmentname || '未知部门';
+      acc[name] = (acc[name] || 0) + 1;
+      return acc;
+    }, {});
+    const sortedDept = Object.entries(deptCounts).sort((a, b) => b[1] - a[1]);
+    const topDept = sortedDept[0];
+
+    const genderCounts = employees.reduce<Record<string, number>>((acc, emp) => {
+      const g = emp.P_emp_sex || '未知';
+      acc[g] = (acc[g] || 0) + 1;
+      return acc;
+    }, {});
+    const male = genderCounts['男'] || 0;
+    const female = genderCounts['女'] || 0;
+    const genderGap = Math.abs(male - female);
+
+    const latestTrend = recruitmentTrend[recruitmentTrend.length - 1];
+    const prevTrend = recruitmentTrend[recruitmentTrend.length - 2];
+    const trendDelta = latestTrend && prevTrend ? latestTrend.count - prevTrend.count : 0;
+
+    const lowQualityField = dataQualityMetrics.find(m => m.value < 70);
+
+    const insights: Array<{ title: string; desc: string; tag: string }> = [];
+
+    if (topDept) {
+      insights.push({
+        title: `${topDept[0]} 人才集中`,
+        desc: `当前人数 ${topDept[1]}，可重点关注梯队与继任规划。`,
+        tag: '编制结构'
+      });
+    }
+
+    if (genderGap > Math.max(male, female) * 0.2) {
+      insights.push({
+        title: '性别结构存在偏差',
+        desc: `男:女 = ${male}:${female}，建议在下轮招聘中平衡结构。`,
+        tag: '多元平衡'
+      });
+    }
+
+    if (latestTrend) {
+      insights.push({
+        title: '入职趋势即时提醒',
+        desc: trendDelta >= 0
+          ? `较上一期 +${trendDelta} 人，保持增长势头需同步招聘配额。`
+          : `较上一期 ${trendDelta} 人，需评估部门招聘停滞原因。`,
+        tag: '趋势监测'
+      });
+    }
+
+    if (lowQualityField) {
+      insights.push({
+        title: `${lowQualityField.title} 质量偏低`,
+        desc: `${lowQualityField.desc}，完善后分析可信度更高。`,
+        tag: '数据治理'
+      });
+    }
+
+    return insights.slice(0, 4);
+  }, [employees, departments, recruitmentTrend, dataQualityMetrics]);
+
   // --- CINEMATIC LOADING STATES ---
   const [terminalLines, setTerminalLines] = useState<string[]>([]);
   const [codeStream, setCodeStream] = useState(""); 
@@ -477,6 +579,11 @@ Return JSON Format:
       case '离职': return 'bg-slate-500/10 text-slate-400 border-slate-500/20';
       default: return 'bg-blue-500/10 text-blue-400 border-blue-500/20';
     }
+  };
+
+  const runPresetAnalysis = (query: string) => {
+    setIsAnalysisOpen(true);
+    generateDynamicAnalysis(query, employees, departments, dataSchema, recruitmentTrend);
   };
 
   const deptOptions = [{ value: '', label: '所有部门' }, ...departments.map(d => ({ value: d.Departmentid, label: d.departmentname }))];
@@ -847,7 +954,31 @@ Return JSON Format:
                       </div>
                   ) : aiReportConfig ? (
                       <div className="max-w-7xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-8 duration-700">
-                        
+
+                        {/* SMART ACTIONS BAR */}
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                           <div className="lg:col-span-2 p-4 rounded-2xl bg-white/5 border border-white/10 flex flex-wrap items-center gap-3">
+                              <div className="flex items-center gap-2 text-xs font-bold text-indigo-200">
+                                 <Sparkles size={14}/> 智能问法推荐
+                              </div>
+                              {smartQueryPresets.map(preset => (
+                                 <button
+                                   key={preset.label}
+                                   onClick={() => runPresetAnalysis(preset.query)}
+                                   className="px-3 py-1.5 rounded-full bg-indigo-500/10 text-indigo-100 border border-indigo-500/30 text-[11px] hover:bg-indigo-500/20 transition-colors"
+                                 >
+                                    {preset.label}
+                                 </button>
+                              ))}
+                           </div>
+                           <div className="p-4 rounded-2xl bg-white/5 border border-white/10 flex items-center gap-3">
+                              <Radar className="text-emerald-400" size={18}/>
+                              <div className="text-xs text-slate-300 leading-relaxed">
+                                 实时调优：点击推荐问法可快速生成深度分析，结合数据字典自动匹配字段，提升“智能感”。
+                              </div>
+                           </div>
+                        </div>
+
                         {/* 1. EXECUTIVE SUMMARY (TYPEWRITER EFFECT) */}
                         <div className="relative p-8 rounded-3xl bg-gradient-to-r from-slate-900 to-slate-900 border border-white/10 overflow-hidden shadow-2xl">
                             <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20"></div>
@@ -863,8 +994,48 @@ Return JSON Format:
                                   <p className="text-white text-lg leading-relaxed font-light font-sans tracking-wide">
                                     {aiReportConfig.summary}
                                   </p>
-                               </div>
-                            </div>
+                              </div>
+                           </div>
+                        </div>
+
+                        {/* 1.25 LOCAL HEURISTIC INSIGHTS */}
+                        {localInsights.length > 0 && (
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                            {localInsights.map(item => (
+                              <div key={item.title} className="p-4 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md flex flex-col gap-2">
+                                <div className="flex items-center gap-2 text-[11px] text-indigo-200 uppercase tracking-widest">
+                                  <Radar size={14} />
+                                  本地即时洞察
+                                </div>
+                                <div className="text-sm text-white font-bold flex items-center gap-2">
+                                  <span className="px-2 py-1 rounded-full bg-indigo-500/10 text-[11px] text-indigo-200 border border-indigo-500/30">{item.tag}</span>
+                                  {item.title}
+                                </div>
+                                <p className="text-xs text-slate-300 leading-relaxed">{item.desc}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* 1.5 DATA QUALITY SNAPSHOT */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                           {dataQualityMetrics.map(metric => (
+                              <div key={metric.title} className="p-4 rounded-2xl bg-[#0F1629]/60 border border-white/10 relative overflow-hidden">
+                                 <div className={`absolute inset-0 bg-gradient-to-br ${metric.accent} blur-3xl opacity-30`}></div>
+                                 <div className="relative z-10 space-y-2">
+                                    <div className="text-xs text-slate-400 flex items-center gap-2">
+                                       <ShieldAlert size={14} className="text-indigo-400"/>
+                                       数据质量雷达
+                                    </div>
+                                    <div className="text-sm font-bold text-white">{metric.title}</div>
+                                    <div className="text-3xl font-mono text-indigo-300 flex items-baseline gap-2">
+                                       {metric.value}%
+                                       <span className="text-[10px] text-slate-400">{metric.desc}</span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-400">用于判断分析可信度，建议优先补齐低覆盖字段。</p>
+                                 </div>
+                              </div>
+                           ))}
                         </div>
 
                         {/* 2. BENTO GRID LAYOUT */}
