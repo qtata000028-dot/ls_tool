@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../services/supabaseClient';
-import { aliyunService, ChatMessage } from '../services/aliyunService';
-import { dataService } from '../services/dataService'; // Added dataService import
+import { aliyunService } from '../services/aliyunService';
+import { dataService } from '../services/dataService'; 
 import { 
   ArrowLeft, Search, Loader2, RefreshCw, 
   Copy, Eye, EyeOff, Edit2, X, 
   Filter, ChevronDown, Check,
-  BarChart3, PieChart, TrendingUp, Users, BrainCircuit, Terminal, Cpu, ShieldCheck, Activity, Sparkles, Database, Code2, Lock, TableProperties
+  BarChart3, PieChart, TrendingUp, BrainCircuit, Terminal, Code2, Lock, TableProperties,
+  Cpu, Activity, Zap, Layers, Network, Fingerprint, Database, Share2, Sparkles
 } from 'lucide-react';
 
 // --- Types ---
@@ -47,8 +48,6 @@ interface AIReport {
   summary: string;
   charts: ChartConfig[];
 }
-
-// --- Removed Hardcoded DATA_SCHEMA constant ---
 
 // --- Custom UI Components ---
 
@@ -242,37 +241,41 @@ const ToolsPlatform: React.FC<ToolsPlatformProps> = ({ onBack, aiParams }) => {
           }
       }, 50);
 
-      // --- 2. Keep Alive Logs ---
-      const phrases = [
-          "Reading data dictionary...", 
-          "Mapping department IDs to entities...",
-          "Detecting data anomalies...",
-          "Optimizing chart selection...",
-          "Validating schema constraints...",
-          "Calculating aggregates..."
+      // --- 2. "High-End" Technical Logs (Chinese) ---
+      const technicalPhrases = [
+          "正在解析数据字典元数据 (Schema Parsing)...",
+          "建立高维向量索引 (Vector Indexing)...",
+          "检测数据异常值与离群点...",
+          "优化可视化渲染管线 (Render Pipeline)...",
+          "执行 SQL 聚合运算...",
+          "加载阿里云 Qwen-Max 神经网络权重...",
+          "生成语义化分析报告...",
+          "校验数据完整性哈希 (SHA-256)...",
+          "构建多维透视表缓存...",
+          "启用实时数据流监控..."
       ];
       
       const keepAliveInterval = setInterval(() => {
           if (Math.random() > 0.6) {
-              const phrase = phrases[Math.floor(Math.random() * phrases.length)];
+              const phrase = technicalPhrases[Math.floor(Math.random() * technicalPhrases.length)];
+              // Add a random hex address for "Matrix" feel
+              const hexAddr = `0x${Math.floor(Math.random()*16777215).toString(16).toUpperCase().padStart(6, '0')}`;
               setTerminalLines(prev => {
-                  const newLogs = [...prev, `[KERNEL] ${phrase} (${Math.random().toFixed(3)}s)`];
-                  return newLogs.slice(-6); 
+                  const newLogs = [...prev, `[KERNEL][${hexAddr}] ${phrase}`];
+                  return newLogs.slice(-8); 
               });
           }
-      }, 800);
+      }, 600);
 
-      setTerminalLines(prev => [...prev, `[SYSTEM] Establishing secure uplink to Aliyun Qwen-Max...`]);
+      setTerminalLines(prev => [...prev, `[SYSTEM] 初始化量子加密通道 (Aliyun-Qwen-Max)...`]);
       
-      // Use keys of activeSchema if available, otherwise fallback (which shouldn't happen if DB is seeded)
       const schemaKeys = Object.keys(activeSchema).length > 0 
           ? JSON.stringify(activeSchema) 
           : "Schema loading...";
 
-      setTerminalLines(prev => [...prev, `[DATA] Schema Loaded: ${Object.keys(activeSchema).length} definitions.`]);
+      setTerminalLines(prev => [...prev, `[DATA] 成功加载 Schema 定义: ${Object.keys(activeSchema).length} 个字段映射.`]);
 
       try {
-        // Construct Context with DYNAMIC Schema
         const deptMappingSample = currentDepts.slice(0, 15).map(d => `${d.Departmentid}:${d.departmentname}`).join(",");
 
         const systemPrompt = `
@@ -282,12 +285,11 @@ Department IDs: ${deptMappingSample}.
 
 Query: "${userQuery}"
 
-Task: Return VALID JSON to configure charts based on the schema above.
-IMPORTANT: Use exact column names from the provided schema (e.g., if schema says 'p_emp_degree', do not use 'degree').
+Task: Return VALID JSON to configure charts. Use exact column names from schema.
 
 Format:
 {
-  "summary": "Short insight in Chinese (e.g. '当前数据显示本科员工占比最高...')",
+  "summary": "Short, professional insight in Chinese (e.g. '通过对 ${currentEmployees.length} 条数据进行分析，当前本科员工占比为...')",
   "charts": [
     { "id": "c1", "type": "stat", "title": "Label", "field": "P_emp_sex", "operation": "count" },
     { "id": "c2", "type": "pie", "title": "Label", "field": "p_emp_degree" }, 
@@ -297,7 +299,6 @@ Format:
         
         let fullResponse = "";
         
-        // Call API
         await aliyunService.chatStream([{ role: 'system', content: systemPrompt }], (chunk) => {
             fullResponse += chunk;
             setCodeStream(prev => prev + chunk);
@@ -305,13 +306,12 @@ Format:
 
         if (!fullResponse) throw new Error("Empty response from AI Gateway.");
 
-        setTerminalLines(prev => [...prev, `[SUCCESS] Payload received. Rendering...`]);
+        setTerminalLines(prev => [...prev, `[SUCCESS] 接收到结构化 Payload. 启动全息渲染引擎...`]);
 
-        // Parse JSON
         const jsonMatch = fullResponse.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
             const config = JSON.parse(jsonMatch[0]);
-            await new Promise(r => setTimeout(r, 800));
+            await new Promise(r => setTimeout(r, 800)); // Delay for dramatic effect
             setAiReportConfig(config);
         } else {
             throw new Error("Invalid JSON signature in response.");
@@ -321,9 +321,8 @@ Format:
           console.error("AI Gen Error", e);
           setTerminalLines(prev => [...prev, `[ERROR] ${e.message}`]);
           
-          // Fallback
           const fallbackConfig: AIReport = {
-              summary: "云端连接不稳定，已自动切换至本地分析模式。",
+              summary: "云端连接不稳定，已自动切换至本地离线分析模式。",
               charts: [
                   { id: 'fb1', type: 'stat', title: '总员工数', field: 'P_emp_no', operation: 'count' },
                   { id: 'fb2', type: 'pie', title: '性别分布', field: 'P_emp_sex' },
@@ -340,23 +339,17 @@ Format:
       }
   };
 
-  // Auto-scroll effect
   useEffect(() => {
-      if (logContainerRef.current) {
-          logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
-      }
-      if (codeContainerRef.current) {
-          codeContainerRef.current.scrollTop = codeContainerRef.current.scrollHeight;
-      }
+      if (logContainerRef.current) logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
+      if (codeContainerRef.current) codeContainerRef.current.scrollTop = codeContainerRef.current.scrollHeight;
   }, [terminalLines, codeStream]);
 
-  // --- Effects ---
   useEffect(() => {
     const shouldAnalyze = aiParams?.mode === 'analysis';
     loadData(aiParams);
   }, [aiParams]);
 
-  // --- Data Aggregation Logic ---
+  // --- Data Aggregation ---
   const getAggregatedData = (chartConfig: ChartConfig) => {
       const field = chartConfig.field;
       if (chartConfig.type === 'stat') {
@@ -682,88 +675,115 @@ Format:
             </div>
          )}
 
-         {/* 5. DYNAMIC BI Dashboard (Analysis Mode) */}
+         {/* 5. DYNAMIC BI Dashboard (Analysis Mode) - UPGRADED VISUALS */}
          {isAnalysisOpen && (
-            <div className="absolute inset-0 z-50 bg-[#0F1629] flex flex-col animate-in slide-in-from-bottom-10 duration-500">
+            <div className="absolute inset-0 z-50 bg-[#020617] flex flex-col animate-in slide-in-from-bottom-10 duration-500">
+               
+               {/* Grid Background Effect */}
+               <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:40px_40px] pointer-events-none"></div>
+               <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#020617]/50 to-[#020617] pointer-events-none"></div>
+
                {/* Header */}
-               <div className="h-16 px-6 border-b border-white/10 flex items-center justify-between bg-gradient-to-r from-blue-900/20 to-indigo-900/20">
-                  <div className="flex items-center gap-3">
-                     <div className="p-2 rounded-lg bg-indigo-500/20 text-indigo-400">
-                        <BrainCircuit size={20} className={isAiGenerating ? "animate-pulse" : ""} />
+               <div className="h-20 px-8 border-b border-white/10 flex items-center justify-between bg-white/[0.01] relative z-10">
+                  <div className="flex items-center gap-4">
+                     <div className="relative group">
+                        <div className="absolute -inset-2 bg-indigo-500/20 rounded-full blur-xl group-hover:bg-indigo-500/40 transition-all"></div>
+                        <div className="relative p-3 rounded-xl bg-[#0F1629] border border-indigo-500/30 text-indigo-400 shadow-[0_0_15px_rgba(99,102,241,0.2)]">
+                            <BrainCircuit size={24} className={isAiGenerating ? "animate-pulse" : ""} />
+                        </div>
                      </div>
                      <div>
-                        <h2 className="text-lg font-bold text-white tracking-tight">AI 数据驾驶舱</h2>
-                        <p className="text-[10px] text-indigo-300 font-mono">
-                           {isAiGenerating ? "ESTABLISHING NEURAL LINK..." : (aiParams?.query || "实时分析")}
+                        <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
+                           AI 智能决策中枢
+                           <span className="px-2 py-0.5 rounded text-[10px] bg-indigo-500/10 border border-indigo-500/20 text-indigo-300">QWEN-MAX</span>
+                        </h2>
+                        <p className="text-xs text-slate-400 font-mono flex items-center gap-2 mt-1">
+                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                           {isAiGenerating ? "ESTABLISHING NEURAL LINK..." : (aiParams?.query || "实时分析会话")}
                         </p>
                      </div>
                   </div>
-                  <button onClick={() => setIsAnalysisOpen(false)} className="p-2 rounded-full hover:bg-white/10 text-slate-400 hover:text-white transition-colors">
-                     <X size={24} />
-                  </button>
+                  <div className="flex items-center gap-3">
+                     {!isAiGenerating && (
+                       <button className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-xs text-slate-300 hover:text-white hover:bg-white/10 transition-colors">
+                          <Share2 size={14} /> 导出报表
+                       </button>
+                     )}
+                     <button onClick={() => setIsAnalysisOpen(false)} className="p-3 rounded-full bg-white/5 hover:bg-red-500/10 hover:text-red-400 text-slate-400 transition-all border border-white/5 hover:border-red-500/20">
+                        <X size={20} />
+                     </button>
+                  </div>
                </div>
 
                {/* Content */}
-               <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-8">
+               <div className="flex-1 overflow-y-auto p-6 md:p-10 relative z-10 custom-scrollbar">
                   
                   {isAiGenerating ? (
                       <div className="h-full flex flex-col items-center justify-center p-4">
-                         {/* CYBERPUNK LOADING TERMINAL */}
-                         <div className="w-full max-w-4xl grid grid-cols-1 md:grid-cols-2 gap-6">
+                         {/* SCI-FI LOADING TERMINAL */}
+                         <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-2 gap-8">
                             
                             {/* Left: Terminal Log */}
-                            <div className="col-span-1 bg-black/90 border border-emerald-500/30 rounded-lg shadow-[0_0_50px_rgba(16,185,129,0.1)] overflow-hidden font-mono text-xs relative h-80 flex flex-col">
-                                <div className="bg-emerald-900/20 px-4 py-2 border-b border-emerald-500/30 flex items-center justify-between">
-                                    <span className="text-emerald-400 flex items-center gap-2">
-                                        <Terminal size={14} /> SYSTEM_KERNEL
+                            <div className="col-span-1 bg-black/80 border border-emerald-500/30 rounded-xl shadow-[0_0_50px_rgba(16,185,129,0.05)] overflow-hidden font-mono text-xs relative h-96 flex flex-col group">
+                                <div className="absolute top-0 inset-x-0 h-[1px] bg-emerald-500/50 shadow-[0_0_10px_#10b981]"></div>
+                                <div className="bg-emerald-950/30 px-4 py-3 border-b border-emerald-500/20 flex items-center justify-between">
+                                    <span className="text-emerald-400 flex items-center gap-2 font-bold tracking-wider">
+                                        <Terminal size={14} /> SYSTEM_KERNEL_LOG
                                     </span>
                                     <div className="flex gap-1.5">
-                                        <div className="w-2.5 h-2.5 rounded-full bg-slate-700"></div>
-                                        <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_10px_#10b981]"></div>
+                                        <div className="w-2 h-2 rounded-full bg-emerald-500/20"></div>
+                                        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_#10b981]"></div>
                                     </div>
                                 </div>
-                                <div ref={logContainerRef} className="flex-1 overflow-y-auto p-4 text-emerald-500/80 space-y-1 custom-scrollbar">
+                                <div ref={logContainerRef} className="flex-1 overflow-y-auto p-5 text-emerald-500/90 space-y-1.5 custom-scrollbar font-mono leading-relaxed">
                                     {terminalLines.map((line, i) => (
-                                       <div key={i} className="border-l-2 border-emerald-500/30 pl-2">
-                                           <span className="opacity-50 mr-2">[{new Date().toLocaleTimeString().split(' ')[0]}]</span>
+                                       <div key={i} className="pl-2 border-l-2 border-emerald-500/20 hover:border-emerald-400/80 hover:bg-emerald-500/5 transition-colors">
+                                           <span className="opacity-40 mr-3 text-[10px]">{new Date().toLocaleTimeString()}</span>
                                            {line}
                                        </div>
                                     ))}
-                                    <div className="animate-pulse text-emerald-400">_</div>
+                                    <div className="animate-pulse text-emerald-400 pl-2">_</div>
                                 </div>
+                                {/* Scanning line effect */}
+                                <div className="absolute inset-0 pointer-events-none bg-gradient-to-b from-transparent via-emerald-500/5 to-transparent animate-[scan_3s_linear_infinite] opacity-50"></div>
                             </div>
 
                             {/* Right: Data Ingestion & Code Stream */}
-                            <div className="col-span-1 space-y-4">
+                            <div className="col-span-1 space-y-6">
                                 {/* 1. Data Ingestion Counter */}
-                                <div className="bg-black/80 border border-blue-500/30 rounded-lg p-4 relative overflow-hidden">
-                                   <div className="absolute top-0 left-0 w-1 h-full bg-blue-500 animate-pulse"></div>
-                                   <div className="flex justify-between items-end mb-2">
-                                      <span className="text-blue-400 font-mono text-xs">DATA_INGESTION_RATE</span>
-                                      <span className="text-blue-300 font-bold text-xl font-mono">
-                                         {processedCount} <span className="text-sm opacity-50">/ {employees.length || 150}</span>
-                                      </span>
+                                <div className="bg-[#0F1629]/50 border border-blue-500/30 rounded-xl p-6 relative overflow-hidden backdrop-blur-md">
+                                   <div className="flex justify-between items-end mb-4 relative z-10">
+                                      <div className="flex flex-col">
+                                         <span className="text-blue-400 font-mono text-xs mb-1 flex items-center gap-2"><Database size={12}/> DATA_INGESTION_RATE</span>
+                                         <span className="text-white font-bold text-3xl font-mono tracking-tighter">
+                                            {processedCount.toString().padStart(4, '0')} <span className="text-sm text-slate-500 font-normal">/ {employees.length || 150} rows</span>
+                                         </span>
+                                      </div>
+                                      <Activity className="text-blue-500 animate-pulse" />
                                    </div>
-                                   <div className="w-full bg-blue-900/20 h-2 rounded-full overflow-hidden">
+                                   {/* Progress Bar */}
+                                   <div className="w-full bg-blue-950/50 h-1.5 rounded-full overflow-hidden relative z-10">
                                       <div 
-                                        className="h-full bg-blue-500 shadow-[0_0_10px_#3b82f6]" 
+                                        className="h-full bg-blue-500 shadow-[0_0_15px_#3b82f6]" 
                                         style={{ width: `${Math.min(100, (processedCount / (employees.length || 150)) * 100)}%` }}
                                       ></div>
                                    </div>
+                                   {/* Background Glow */}
+                                   <div className="absolute -right-10 -bottom-10 w-32 h-32 bg-blue-500/20 blur-[50px] rounded-full"></div>
                                 </div>
 
                                 {/* 2. Code Stream Window */}
-                                <div className="bg-[#0c0c0c] border border-white/10 rounded-lg flex-1 h-48 flex flex-col overflow-hidden relative">
-                                   <div className="px-3 py-1.5 border-b border-white/10 bg-white/5 flex items-center justify-between">
-                                      <span className="text-[10px] text-slate-400 flex items-center gap-1.5">
-                                         <Code2 size={12} /> GENERATING_JSON_PAYLOAD...
+                                <div className="bg-[#050505] border border-white/10 rounded-xl flex-1 h-60 flex flex-col overflow-hidden relative shadow-inner">
+                                   <div className="px-4 py-2 border-b border-white/5 bg-white/5 flex items-center justify-between">
+                                      <span className="text-[10px] text-slate-400 flex items-center gap-2 uppercase tracking-wider">
+                                         <Code2 size={12} /> Live_Payload_Stream
                                       </span>
-                                      <Lock size={10} className="text-slate-600"/>
+                                      <Lock size={10} className="text-indigo-500"/>
                                    </div>
-                                   <div ref={codeContainerRef} className="flex-1 p-3 overflow-y-auto font-mono text-[10px] text-indigo-300 leading-relaxed opacity-80">
+                                   <div ref={codeContainerRef} className="flex-1 p-4 overflow-y-auto font-mono text-[11px] text-indigo-300/90 leading-relaxed opacity-90">
                                       <pre className="whitespace-pre-wrap break-all">
-                                         {codeStream || <span className="animate-pulse">Waiting for tokens...</span>}
-                                         <span className="inline-block w-1.5 h-3 bg-indigo-500 ml-1 animate-pulse"></span>
+                                         {codeStream || <span className="animate-pulse text-slate-600">Waiting for stream...</span>}
+                                         <span className="inline-block w-2 h-4 bg-indigo-500 ml-1 animate-pulse align-middle"></span>
                                       </pre>
                                    </div>
                                 </div>
@@ -771,26 +791,50 @@ Format:
                          </div>
                       </div>
                   ) : aiReportConfig ? (
-                      <>
-                        {/* AI Summary */}
-                        <div className="p-4 rounded-xl bg-gradient-to-r from-indigo-500/10 to-blue-500/10 border border-indigo-500/20 text-indigo-200 text-sm leading-relaxed flex gap-3 animate-in slide-in-from-top-4 duration-700">
-                            <Sparkles size={18} className="shrink-0 mt-0.5" />
-                            {aiReportConfig.summary}
+                      <div className="max-w-6xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-8 duration-700">
+                        {/* AI Summary Card */}
+                        <div className="relative p-6 rounded-2xl bg-gradient-to-r from-indigo-900/40 to-blue-900/40 border border-indigo-500/30 overflow-hidden group">
+                            <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500"></div>
+                            <div className="relative z-10 flex gap-4">
+                               <div className="p-3 rounded-lg bg-indigo-500/20 text-indigo-300 h-fit">
+                                  <Sparkles size={24} />
+                               </div>
+                               <div>
+                                  <h3 className="text-sm font-bold text-indigo-200 uppercase tracking-widest mb-2">AI Summary Insight</h3>
+                                  <p className="text-indigo-50 text-base leading-relaxed font-light">{aiReportConfig.summary}</p>
+                               </div>
+                            </div>
+                            {/* Decorative background visual */}
+                            <div className="absolute -right-10 -top-10 w-64 h-64 bg-indigo-500/10 blur-[80px] rounded-full group-hover:bg-indigo-500/20 transition-all duration-1000"></div>
                         </div>
 
-                        {/* Stats Row (First layer of grid) */}
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        {/* Stats Row */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
                            {aiReportConfig.charts
                               .filter(c => c.type === 'stat')
-                              .map((chart) => {
+                              .map((chart, idx) => {
                                   const val = getAggregatedData(chart) as number;
                                   return (
-                                    <div key={chart.id} className="bg-[#1E293B]/50 p-5 rounded-2xl border border-white/5 flex flex-col justify-between h-32 animate-in zoom-in-95 duration-500">
-                                        <div className="flex justify-between items-start">
-                                            <span className="text-xs text-slate-400 font-medium uppercase">{chart.title}</span>
-                                            <TrendingUp size={16} className="text-blue-400" />
+                                    <div key={chart.id} style={{ animationDelay: `${idx * 100}ms` }} className="relative bg-[#1E293B]/60 backdrop-blur-md p-6 rounded-2xl border border-white/5 flex flex-col justify-between h-36 overflow-hidden group hover:border-white/20 transition-all duration-300 hover:-translate-y-1">
+                                        <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                                        
+                                        <div className="relative z-10 flex justify-between items-start">
+                                            <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">{chart.title}</span>
+                                            <div className="p-1.5 rounded-md bg-white/5 text-slate-400 group-hover:text-white group-hover:bg-white/10 transition-colors">
+                                               <Layers size={14} />
+                                            </div>
                                         </div>
-                                        <div className="text-4xl font-bold text-white tabular-nums">{val}</div>
+                                        
+                                        <div className="relative z-10">
+                                           <div className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-400 font-sans tabular-nums group-hover:scale-105 transition-transform origin-left">
+                                              {val}
+                                           </div>
+                                           {/* Fake trend indicator for visual flair */}
+                                           <div className="flex items-center gap-1 mt-2 text-[10px] text-emerald-400">
+                                              <TrendingUp size={10} /> 
+                                              <span>实时聚合完成</span>
+                                           </div>
+                                        </div>
                                     </div>
                                   );
                               })
@@ -798,65 +842,101 @@ Format:
                         </div>
 
                         {/* Charts Grid */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                            {aiReportConfig.charts
                               .filter(c => c.type !== 'stat')
-                              .map((chart) => {
+                              .map((chart, idx) => {
                                   const data = getAggregatedData(chart) as {name: string, value: number}[];
                                   const total = data.reduce((acc, curr) => acc + curr.value, 0);
 
                                   return (
-                                     <div key={chart.id} className="bg-[#1E293B]/50 p-6 rounded-2xl border border-white/5 flex flex-col animate-in slide-in-from-bottom-4 duration-700">
-                                         <h3 className="text-sm font-bold text-white mb-6 flex items-center gap-2">
-                                            {chart.type === 'pie' ? <PieChart size={16} className="text-purple-400"/> : <BarChart3 size={16} className="text-blue-400"/>}
-                                            {chart.title}
-                                         </h3>
+                                     <div key={chart.id} style={{ animationDelay: `${idx * 150}ms` }} className="bg-[#1E293B]/40 backdrop-blur-md p-8 rounded-3xl border border-white/5 flex flex-col animate-in slide-in-from-bottom-4 relative overflow-hidden">
+                                         {/* Grid Background for Chart */}
+                                         <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:20px_20px] opacity-20"></div>
 
-                                         {chart.type === 'pie' ? (
-                                             // Dynamic Pie Visual
-                                             <div className="flex items-center gap-6 justify-center py-4">
-                                                 {data.slice(0, 3).map((item, idx) => {
-                                                     const colors = ['bg-blue-500', 'bg-pink-500', 'bg-emerald-500', 'bg-amber-500'];
-                                                     const color = colors[idx % colors.length];
-                                                     const height = total > 0 ? (item.value / total) * 100 : 0;
-                                                     return (
-                                                         <div key={item.name} className="flex flex-col items-center gap-2">
-                                                             <div className="relative w-14 bg-slate-800 rounded-full h-32 flex items-end overflow-hidden border border-white/5">
-                                                                 <div style={{ height: `${height}%` }} className={`w-full ${color} transition-all duration-1000 ease-out`}></div>
-                                                             </div>
-                                                             <div className="text-center">
-                                                                 <div className="text-xs font-bold text-white">{item.name}</div>
-                                                                 <div className="text-[10px] text-slate-400">{item.value} ({Math.round(height)}%)</div>
-                                                             </div>
-                                                         </div>
-                                                     )
-                                                 })}
-                                             </div>
-                                         ) : (
-                                             // Dynamic Bar Visual
-                                             <div className="space-y-3">
-                                                 {data.slice(0, 5).map((item, idx) => (
-                                                     <div key={item.name} className="space-y-1">
-                                                         <div className="flex justify-between text-xs text-slate-300">
-                                                             <span className="truncate max-w-[150px]">{item.name}</span>
-                                                             <span className="font-mono">{item.value}</span>
-                                                         </div>
-                                                         <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
-                                                             <div 
-                                                                 style={{ width: `${total > 0 ? (item.value / total) * 100 : 0}%`, transitionDelay: `${idx * 100}ms` }}
-                                                                 className="h-full bg-indigo-500 rounded-full transition-all duration-1000 ease-out"
-                                                             ></div>
-                                                         </div>
-                                                     </div>
-                                                 ))}
-                                             </div>
-                                         )}
+                                         <div className="relative z-10 mb-8 flex items-center justify-between">
+                                            <h3 className="text-base font-bold text-white flex items-center gap-3">
+                                                <div className={`p-2 rounded-lg ${chart.type === 'pie' ? 'bg-purple-500/20 text-purple-400' : 'bg-blue-500/20 text-blue-400'}`}>
+                                                   {chart.type === 'pie' ? <PieChart size={18}/> : <BarChart3 size={18}/>}
+                                                </div>
+                                                {chart.title}
+                                            </h3>
+                                            <div className="text-xs text-slate-500 font-mono">ID: {chart.id.toUpperCase()}</div>
+                                         </div>
+
+                                         <div className="relative z-10 flex-1 flex items-center justify-center">
+                                            {chart.type === 'pie' ? (
+                                                // --- UPGRADED CONIC GRADIENT DONUT CHART ---
+                                                <div className="flex items-center gap-10 w-full justify-center">
+                                                    <div className="relative w-40 h-40 shrink-0">
+                                                        {/* CSS Conic Gradient Ring */}
+                                                        <div 
+                                                            className="w-full h-full rounded-full animate-[spin_3s_ease-out]"
+                                                            style={{
+                                                                background: `conic-gradient(
+                                                                    ${data.map((d, i) => {
+                                                                        const start = data.slice(0, i).reduce((acc, cur) => acc + cur.value, 0) / total * 100;
+                                                                        const end = start + (d.value / total * 100);
+                                                                        const color = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899'][i % 5];
+                                                                        return `${color} ${start}% ${end}%`;
+                                                                    }).join(', ')}
+                                                                )`,
+                                                                mask: 'radial-gradient(transparent 55%, black 56%)',
+                                                                WebkitMask: 'radial-gradient(transparent 55%, black 56%)'
+                                                            }}
+                                                        ></div>
+                                                        {/* Center Text */}
+                                                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                                                            <span className="text-2xl font-bold text-white">{total}</span>
+                                                            <span className="text-[10px] text-slate-400 uppercase">Total</span>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Legend */}
+                                                    <div className="flex flex-col gap-2 min-w-[120px]">
+                                                        {data.slice(0, 5).map((item, i) => (
+                                                            <div key={i} className="flex items-center justify-between text-xs">
+                                                                <div className="flex items-center gap-2">
+                                                                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899'][i % 5] }}></div>
+                                                                    <span className="text-slate-300 truncate max-w-[80px]">{item.name}</span>
+                                                                </div>
+                                                                <span className="font-mono text-slate-500">{Math.round(item.value / total * 100)}%</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                // --- UPGRADED GLOWING BAR CHART ---
+                                                <div className="w-full space-y-4">
+                                                    {data.slice(0, 6).map((item, i) => (
+                                                        <div key={item.name} className="group/bar">
+                                                            <div className="flex justify-between text-xs mb-1.5">
+                                                                <span className="text-slate-300 font-medium">{item.name}</span>
+                                                                <span className="text-indigo-300 font-mono">{item.value}</span>
+                                                            </div>
+                                                            <div className="h-2.5 bg-slate-800/50 rounded-sm overflow-hidden border border-white/5 relative">
+                                                                {/* Background Grid Lines inside bar */}
+                                                                <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent_20%,rgba(255,255,255,0.05)_20%)] bg-[size:20%_100%]"></div>
+                                                                
+                                                                <div 
+                                                                    style={{ width: `${total > 0 ? (item.value / data[0].value) * 100 : 0}%`, transitionDelay: `${i * 100}ms` }}
+                                                                    className="h-full bg-gradient-to-r from-blue-600 to-indigo-500 relative transition-all duration-1000 ease-out group-hover/bar:brightness-110"
+                                                                >
+                                                                    {/* Glow effect at end of bar */}
+                                                                    <div className="absolute right-0 top-0 bottom-0 w-2 bg-white/50 blur-[4px]"></div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                         </div>
                                      </div>
                                   )
                               })
                            }
                         </div>
-                      </>
+                      </div>
                   ) : null}
                </div>
             </div>
