@@ -8,7 +8,8 @@ import {
   Filter, ChevronDown, Check,
   BarChart3, PieChart, TrendingUp, BrainCircuit, Terminal, Code2, Lock, TableProperties,
   Cpu, Activity, Zap, Layers, Network, Fingerprint, Database, Share2, Sparkles,
-  AlertTriangle, Target, Lightbulb, Radar, LineChart, ShieldAlert
+  AlertTriangle, Target, Lightbulb, Radar, LineChart, ShieldAlert, CheckCircle2,
+  Briefcase, Calendar
 } from 'lucide-react';
 
 // --- Types ---
@@ -43,6 +44,7 @@ interface ChartConfig {
   operation?: 'count' | 'distinct';
   color?: string;
   description?: string;
+  insight?: string; // NEW: AI insight for specific chart
 }
 
 // UPGRADED AI REPORT INTERFACE
@@ -50,8 +52,8 @@ interface AIReport {
   summary: string;
   charts: ChartConfig[];
   risks: Array<{ title: string; level: 'high' | 'medium' | 'low'; desc: string }>;
-  suggestions: Array<{ title: string; action: string }>;
-  prediction: string; // Simulated trend text
+  suggestions: Array<{ title: string; action: string; priority?: string }>;
+  prediction: string; 
 }
 
 // --- Custom UI Components ---
@@ -145,6 +147,9 @@ const ToolsPlatform: React.FC<ToolsPlatformProps> = ({ onBack, aiParams }) => {
   const [isAiGenerating, setIsAiGenerating] = useState(false);
   const [aiReportConfig, setAiReportConfig] = useState<AIReport | null>(null);
   
+  // Recruitment Trend Data (Calculated)
+  const [recruitmentTrend, setRecruitmentTrend] = useState<{year: string, count: number}[]>([]);
+
   // --- CINEMATIC LOADING STATES ---
   const [terminalLines, setTerminalLines] = useState<string[]>([]);
   const [codeStream, setCodeStream] = useState(""); 
@@ -193,9 +198,28 @@ const ToolsPlatform: React.FC<ToolsPlatformProps> = ({ onBack, aiParams }) => {
         fetchTable("select Departmentid, departmentname from P_DepartmentTab")
       ]);
 
-      setEmployees(Array.isArray(empData) ? empData : []);
+      const safeEmps = Array.isArray(empData) ? empData : [];
+      setEmployees(safeEmps);
       setDepartments(Array.isArray(deptData) ? deptData : []);
       
+      // Calculate Trends immediately
+      const trendMap: Record<string, number> = {};
+      safeEmps.forEach((e: Employee) => {
+          if (e.P_emp_workJoindt) {
+              const year = e.P_emp_workJoindt.split('T')[0].substring(0, 4); // Extract Year
+              if (year && !isNaN(Number(year))) {
+                  trendMap[year] = (trendMap[year] || 0) + 1;
+              }
+          }
+      });
+      // Convert to array and sort by year
+      const trendArray = Object.entries(trendMap)
+          .map(([year, count]) => ({ year, count }))
+          .sort((a, b) => a.year.localeCompare(b.year))
+          .slice(-5); // Last 5 years
+      
+      setRecruitmentTrend(trendArray);
+
       // If triggered by AI, start the dynamic analysis using the LOADED schema
       if (triggerParams?.mode === 'analysis') {
          setIsAnalysisOpen(true);
@@ -203,9 +227,10 @@ const ToolsPlatform: React.FC<ToolsPlatformProps> = ({ onBack, aiParams }) => {
          setTimeout(() => {
              generateDynamicAnalysis(
                  triggerParams.query, 
-                 Array.isArray(empData) ? empData : [], 
+                 safeEmps, 
                  Array.isArray(deptData) ? deptData : [],
-                 schema 
+                 schema,
+                 trendArray
              );
          }, 500);
       }
@@ -223,7 +248,8 @@ const ToolsPlatform: React.FC<ToolsPlatformProps> = ({ onBack, aiParams }) => {
       userQuery: string, 
       currentEmployees: Employee[], 
       currentDepts: Department[],
-      currentSchema?: Record<string, string> // Optional injection for initial load
+      currentSchema?: Record<string, string>, // Optional injection for initial load
+      trendData?: {year: string, count: number}[]
   ) => {
       setIsAiGenerating(true);
       setAiReportConfig(null);
@@ -282,32 +308,42 @@ const ToolsPlatform: React.FC<ToolsPlatformProps> = ({ onBack, aiParams }) => {
 
       try {
         const deptMappingSample = currentDepts.slice(0, 15).map(d => `${d.Departmentid}:${d.departmentname}`).join(",");
+        const trendString = trendData ? JSON.stringify(trendData) : "No trend data";
 
         const systemPrompt = `
 Context: HR Dashboard Data for a professional enterprise.
 Data Schema: ${schemaKeys}.
 Dept Mapping: ${deptMappingSample}.
+Recruitment Trend (Year: Count): ${trendString}.
 
 Query: "${userQuery}"
 
-Task: Act as a Chief Data Scientist. Analyze the data and return a JSON.
-CRITICAL: You must infer trends and risks even if data is static (simulate realistic business insights).
+Task: Act as a Chief Data Scientist. Analyze the data deeply.
+CRITICAL: 
+1. Correlate metrics (e.g. "Does High Degree count in Dept X explain low recruitment?").
+2. For "insight", give a specific 1-sentence analysis for that specific chart.
+3. For the Bar Chart, ensure you analyze distinct values properly.
 
 Return JSON Format:
 {
-  "summary": "High-level executive summary (Chinese). Focus on key metrics and overall health.",
+  "summary": "Deep executive summary (Chinese). Mention specific departments or metrics. Be professional.",
   "charts": [
-    { "id": "c1", "type": "stat", "title": "Label", "field": "column_name", "operation": "count" },
-    { "id": "c2", "type": "pie", "title": "Label", "field": "column_name" },
-    { "id": "c3", "type": "bar", "title": "Label", "field": "column_name" }
+    { 
+      "id": "c1", 
+      "type": "stat|pie|bar", 
+      "title": "Label", 
+      "field": "column_name", 
+      "operation": "count|distinct",
+      "insight": "Specific analysis of this chart's data (e.g. '研发部高学历人才集中，建议关注留存')"
+    }
   ],
   "risks": [
-    { "title": "Short Risk Title", "level": "high|medium", "desc": "Detailed risk explanation." }
+    { "title": "Short Risk Title", "level": "high|medium", "desc": "Detailed explanation based on data." }
   ],
   "suggestions": [
-     { "title": "Action Title", "action": "Specific actionable advice." }
+     { "title": "Action Title", "action": "Specific actionable advice.", "priority": "P0|P1" }
   ],
-  "prediction": "A short paragraph predicting future trend (e.g., '预计下季度研发部门将面临人才缺口...')"
+  "prediction": "Predict future based on the provided Recruitment Trend data. (e.g. '基于2023-2024年数据，招聘放缓...')"
 }`;
         
         let fullResponse = "";
@@ -337,9 +373,9 @@ Return JSON Format:
           const fallbackConfig: AIReport = {
               summary: "云端连接不稳定，已自动切换至本地离线分析模式。",
               charts: [
-                  { id: 'fb1', type: 'stat', title: '总员工数', field: 'P_emp_no', operation: 'count' },
-                  { id: 'fb2', type: 'pie', title: '性别分布', field: 'P_emp_sex' },
-                  { id: 'fb3', type: 'bar', title: '部门分布', field: 'Departmentid' }
+                  { id: 'fb1', type: 'stat', title: '总员工数', field: 'P_emp_no', operation: 'count', insight: '数据总览' },
+                  { id: 'fb2', type: 'pie', title: '性别分布', field: 'P_emp_sex', insight: '性别比例相对均衡' },
+                  { id: 'fb3', type: 'bar', title: '部门分布', field: 'Departmentid', insight: '核心部门人数占比较高' }
               ],
               risks: [{ title: "数据同步延迟", level: "low", desc: "本地数据可能非最新版本。" }],
               suggestions: [{ title: "检查网络", action: "请确认服务器连接状态。" }],
@@ -446,6 +482,9 @@ Return JSON Format:
   const deptOptions = [{ value: '', label: '所有部门' }, ...departments.map(d => ({ value: d.Departmentid, label: d.departmentname }))];
   const editDeptOptions = departments.map(d => ({ value: d.Departmentid, label: d.departmentname }));
   const statusOptions = [{ value: '正式', label: '正式员工' }, { value: '试用', label: '试用期' }, { value: '离职', label: '已离职' }];
+
+  // Visualization Colors
+  const CHART_COLORS = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899', '#6366f1', '#14b8a6'];
 
   return (
     <div className="w-full h-[85vh] max-w-[1600px] mx-auto bg-[#0F1629]/80 backdrop-blur-2xl border border-white/10 rounded-3xl flex flex-col overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-500 relative">
@@ -839,12 +878,24 @@ Return JSON Format:
                                       <h4 className="text-sm font-bold text-white flex items-center gap-2"><LineChart size={16} /> 趋势预测 (Trend)</h4>
                                       <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded-full border border-emerald-500/20">AI 预测</span>
                                    </div>
+                                   {/* Real trend data visualization */}
                                    <div className="h-32 flex items-end gap-1 mb-4">
-                                      {[40, 65, 55, 80, 70, 90, 100].map((h, i) => (
-                                         <div key={i} className="flex-1 bg-gradient-to-t from-emerald-500/20 to-emerald-500/80 rounded-t-sm relative group/bar hover:bg-emerald-400 transition-colors" style={{ height: `${h}%` }}>
-                                            <div className="absolute top-0 w-full h-[2px] bg-emerald-400 shadow-[0_0_10px_#34d399]"></div>
-                                         </div>
-                                      ))}
+                                      {recruitmentTrend.length > 0 ? (
+                                         recruitmentTrend.map((t, i) => {
+                                             const max = Math.max(...recruitmentTrend.map(x => x.count));
+                                             const h = (t.count / max) * 100;
+                                             return (
+                                                 <div key={t.year} className="flex-1 flex flex-col items-center justify-end group/bar gap-2" style={{ height: '100%' }}>
+                                                     <div className="w-full bg-gradient-to-t from-emerald-500/20 to-emerald-500/80 rounded-t-sm relative transition-all duration-500" style={{ height: `${h}%` }}>
+                                                        <div className="absolute top-0 w-full h-[2px] bg-emerald-400 shadow-[0_0_10px_#34d399]"></div>
+                                                     </div>
+                                                     <span className="text-[10px] text-slate-500">{t.year}</span>
+                                                 </div>
+                                             );
+                                         })
+                                      ) : (
+                                        <div className="w-full h-full flex items-center justify-center text-slate-500 text-xs">暂无趋势数据</div>
+                                      )}
                                    </div>
                                    <p className="text-xs text-slate-300 leading-relaxed border-t border-white/5 pt-3">
                                       {aiReportConfig.prediction || "AI 模型分析显示，下季度各部门人才密度将呈现稳步上升趋势。"}
@@ -889,7 +940,7 @@ Return JSON Format:
                                                  </h3>
                                               </div>
 
-                                              <div className="relative z-10 flex-1 flex items-center justify-center">
+                                              <div className="relative z-10 flex-1 flex flex-col items-center justify-center">
                                                  {chart.type === 'pie' ? (
                                                      // --- CONIC GRADIENT DONUT ---
                                                      <div className="flex items-center gap-6 w-full justify-center">
@@ -901,7 +952,7 @@ Return JSON Format:
                                                                          ${data.map((d, i) => {
                                                                              const start = data.slice(0, i).reduce((acc, cur) => acc + cur.value, 0) / total * 100;
                                                                              const end = start + (d.value / total * 100);
-                                                                             const color = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899'][i % 5];
+                                                                             const color = CHART_COLORS[i % CHART_COLORS.length];
                                                                              return `${color} ${start}% ${end}%`;
                                                                          }).join(', ')}
                                                                      )`,
@@ -917,7 +968,7 @@ Return JSON Format:
                                                              {data.slice(0, 4).map((item, i) => (
                                                                  <div key={i} className="flex items-center justify-between text-[11px]">
                                                                      <div className="flex items-center gap-2">
-                                                                         <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899'][i % 5] }}></div>
+                                                                         <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }}></div>
                                                                          <span className="text-slate-300 truncate max-w-[60px]">{item.name}</span>
                                                                      </div>
                                                                      <span className="font-mono text-slate-500">{Math.round(item.value / total * 100)}%</span>
@@ -926,25 +977,40 @@ Return JSON Format:
                                                          </div>
                                                      </div>
                                                  ) : (
-                                                     // --- FREQUENCY BAR CHART ---
+                                                     // --- MULTI-COLOR BAR CHART ---
                                                      <div className="w-full space-y-3">
-                                                         {data.slice(0, 5).map((item, i) => (
-                                                             <div key={item.name} className="group/bar">
-                                                                 <div className="flex justify-between text-[10px] mb-1">
-                                                                     <span className="text-slate-300">{item.name}</span>
-                                                                     <span className="text-indigo-300 font-mono">{item.value}</span>
+                                                         {data.slice(0, 5).map((item, i) => {
+                                                             const color = CHART_COLORS[i % CHART_COLORS.length];
+                                                             return (
+                                                                 <div key={item.name} className="group/bar">
+                                                                     <div className="flex justify-between text-[10px] mb-1">
+                                                                         <span className="text-slate-300">{item.name}</span>
+                                                                         <span className="text-white font-mono">{item.value}</span>
+                                                                     </div>
+                                                                     <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden relative">
+                                                                         <div 
+                                                                             style={{ 
+                                                                                 width: `${total > 0 ? (item.value / data[0].value) * 100 : 0}%`, 
+                                                                                 transitionDelay: `${i * 100}ms`,
+                                                                                 backgroundColor: color 
+                                                                             }}
+                                                                             className="h-full relative transition-all duration-1000 ease-out shadow-[0_0_10px_rgba(255,255,255,0.2)]"
+                                                                         ></div>
+                                                                     </div>
                                                                  </div>
-                                                                 <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden relative">
-                                                                     <div 
-                                                                         style={{ width: `${total > 0 ? (item.value / data[0].value) * 100 : 0}%`, transitionDelay: `${i * 100}ms` }}
-                                                                         className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 relative transition-all duration-1000 ease-out"
-                                                                     ></div>
-                                                                 </div>
-                                                             </div>
-                                                         ))}
+                                                             );
+                                                         })}
                                                      </div>
                                                  )}
                                               </div>
+
+                                              {/* AI Insight Footer */}
+                                              {chart.insight && (
+                                                  <div className="mt-4 pt-3 border-t border-white/5 flex gap-2 items-start">
+                                                      <Briefcase size={12} className="text-indigo-400 mt-0.5 shrink-0" />
+                                                      <p className="text-[10px] text-indigo-200/80 leading-relaxed">{chart.insight}</p>
+                                                  </div>
+                                              )}
                                           </div>
                                        )
                                    })
@@ -956,11 +1022,16 @@ Return JSON Format:
                                    <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-4 relative z-10"><Target size={16} className="text-indigo-400"/> 决策建议 (Actions)</h3>
                                    <div className="flex-1 space-y-3 relative z-10">
                                       {aiReportConfig.suggestions?.slice(0, 3).map((sugg, i) => (
-                                         <div key={i} className="flex gap-3">
-                                            <div className="mt-1 w-1.5 h-1.5 rounded-full bg-indigo-400 shrink-0"></div>
+                                         <div key={i} className="flex gap-3 group cursor-pointer">
+                                            <div className="mt-1 w-4 h-4 rounded-full border border-indigo-400/50 flex items-center justify-center shrink-0 group-hover:bg-indigo-500 transition-colors">
+                                                <div className="w-1.5 h-1.5 rounded-full bg-indigo-400 group-hover:bg-white"></div>
+                                            </div>
                                             <div>
-                                               <div className="text-xs font-bold text-indigo-100">{sugg.title}</div>
-                                               <p className="text-[10px] text-indigo-300/80 mt-0.5 leading-relaxed">{sugg.action}</p>
+                                               <div className="flex items-center gap-2">
+                                                   <div className="text-xs font-bold text-indigo-100 group-hover:text-white transition-colors">{sugg.title}</div>
+                                                   {sugg.priority && <span className="text-[9px] px-1.5 py-0.5 bg-indigo-500/20 rounded text-indigo-300 border border-indigo-500/30">{sugg.priority}</span>}
+                                               </div>
+                                               <p className="text-[10px] text-indigo-300/80 mt-1 leading-relaxed">{sugg.action}</p>
                                             </div>
                                          </div>
                                       ))}
