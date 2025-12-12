@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../services/supabaseClient';
 import { aliyunService, ChatMessage } from '../services/aliyunService';
+import { dataService } from '../services/dataService'; // Added dataService import
 import { 
   ArrowLeft, Search, Loader2, RefreshCw, 
   Copy, Eye, EyeOff, Edit2, X, 
   Filter, ChevronDown, Check,
-  BarChart3, PieChart, TrendingUp, Users, BrainCircuit, Terminal, Cpu, ShieldCheck, Activity, Sparkles, Database, Code2, Lock
+  BarChart3, PieChart, TrendingUp, Users, BrainCircuit, Terminal, Cpu, ShieldCheck, Activity, Sparkles, Database, Code2, Lock, TableProperties
 } from 'lucide-react';
 
 // --- Types ---
@@ -46,6 +47,8 @@ interface AIReport {
   summary: string;
   charts: ChartConfig[];
 }
+
+// --- Removed Hardcoded DATA_SCHEMA constant ---
 
 // --- Custom UI Components ---
 
@@ -122,9 +125,13 @@ const ToolsPlatform: React.FC<ToolsPlatformProps> = ({ onBack, aiParams }) => {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   
+  // Dynamic Schema State
+  const [dataSchema, setDataSchema] = useState<Record<string, string>>({});
+  
   // States
   const [visiblePhones, setVisiblePhones] = useState<Set<string>>(new Set());
   const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [isSchemaOpen, setIsSchemaOpen] = useState(false);
   const [currentEmp, setCurrentEmp] = useState<Employee | null>(null);
   const [keyword, setKeyword] = useState('');
   const [selectedDept, setSelectedDept] = useState<string | number>('');
@@ -136,8 +143,8 @@ const ToolsPlatform: React.FC<ToolsPlatformProps> = ({ onBack, aiParams }) => {
   
   // --- CINEMATIC LOADING STATES ---
   const [terminalLines, setTerminalLines] = useState<string[]>([]);
-  const [codeStream, setCodeStream] = useState(""); // The raw JSON being built
-  const [processedCount, setProcessedCount] = useState(0); // "Eating data" counter
+  const [codeStream, setCodeStream] = useState(""); 
+  const [processedCount, setProcessedCount] = useState(0); 
   const logContainerRef = useRef<HTMLDivElement>(null);
   const codeContainerRef = useRef<HTMLDivElement>(null);
 
@@ -160,6 +167,11 @@ const ToolsPlatform: React.FC<ToolsPlatformProps> = ({ onBack, aiParams }) => {
     setLoading(true);
     setError(null);
     try {
+      // 1. Fetch Dynamic Schema (Dictionary)
+      const schema = await dataService.getDataDictionary('p_employeetab');
+      setDataSchema(schema);
+
+      // 2. Fetch Real Data
       const { api_url, api_token } = await getApiConfig();
       const fetchTable = async (sql: string) => {
         const res = await fetch(api_url, {
@@ -180,12 +192,17 @@ const ToolsPlatform: React.FC<ToolsPlatformProps> = ({ onBack, aiParams }) => {
       setEmployees(Array.isArray(empData) ? empData : []);
       setDepartments(Array.isArray(deptData) ? deptData : []);
       
-      // If triggered by AI, start the dynamic analysis
+      // If triggered by AI, start the dynamic analysis using the LOADED schema
       if (triggerParams?.mode === 'analysis') {
          setIsAnalysisOpen(true);
-         // Ensure data is set in state before running analysis
+         // Pass the schema explicitly to ensure it's available
          setTimeout(() => {
-             generateDynamicAnalysis(triggerParams.query, Array.isArray(empData) ? empData : [], Array.isArray(deptData) ? deptData : []);
+             generateDynamicAnalysis(
+                 triggerParams.query, 
+                 Array.isArray(empData) ? empData : [], 
+                 Array.isArray(deptData) ? deptData : [],
+                 schema 
+             );
          }, 500);
       }
 
@@ -197,19 +214,24 @@ const ToolsPlatform: React.FC<ToolsPlatformProps> = ({ onBack, aiParams }) => {
     }
   };
 
-  // --- AI Dynamic Logic (The "Visual Processing" Effect) ---
-  
-  const generateDynamicAnalysis = async (userQuery: string, currentEmployees: Employee[], currentDepts: Department[]) => {
+  // --- AI Dynamic Logic ---
+  const generateDynamicAnalysis = async (
+      userQuery: string, 
+      currentEmployees: Employee[], 
+      currentDepts: Department[],
+      currentSchema?: Record<string, string> // Optional injection for initial load
+  ) => {
       setIsAiGenerating(true);
       setAiReportConfig(null);
       setTerminalLines([]);
       setCodeStream("");
       setProcessedCount(0);
 
+      const activeSchema = currentSchema || dataSchema;
+
       // --- 1. Start Visual "Data Ingestion" Counter ---
-      // This simulates "Eating Data"
       let currentCount = 0;
-      const targetCount = currentEmployees.length || 150; // Use 150 if empty for demo
+      const targetCount = currentEmployees.length || 150; 
       
       const ingestionInterval = setInterval(() => {
           if (currentCount < targetCount) {
@@ -220,16 +242,14 @@ const ToolsPlatform: React.FC<ToolsPlatformProps> = ({ onBack, aiParams }) => {
           }
       }, 50);
 
-      // --- 2. Start "Keep Alive" Logs ---
-      // This ensures screen is never static even if API is slow
+      // --- 2. Keep Alive Logs ---
       const phrases = [
-          "Running semantic analysis...", 
+          "Reading data dictionary...", 
           "Mapping department IDs to entities...",
           "Detecting data anomalies...",
           "Optimizing chart selection...",
           "Validating schema constraints...",
-          "Calculating aggregates...",
-          "Normalizing dataset..."
+          "Calculating aggregates..."
       ];
       
       const keepAliveInterval = setInterval(() => {
@@ -237,40 +257,33 @@ const ToolsPlatform: React.FC<ToolsPlatformProps> = ({ onBack, aiParams }) => {
               const phrase = phrases[Math.floor(Math.random() * phrases.length)];
               setTerminalLines(prev => {
                   const newLogs = [...prev, `[KERNEL] ${phrase} (${Math.random().toFixed(3)}s)`];
-                  return newLogs.slice(-6); // Keep only last 6 lines to avoid clutter
+                  return newLogs.slice(-6); 
               });
           }
       }, 800);
 
       setTerminalLines(prev => [...prev, `[SYSTEM] Establishing secure uplink to Aliyun Qwen-Max...`]);
-      setTerminalLines(prev => [...prev, `[DATA] Ingesting ${targetCount} records from local buffer...`]);
+      
+      // Use keys of activeSchema if available, otherwise fallback (which shouldn't happen if DB is seeded)
+      const schemaKeys = Object.keys(activeSchema).length > 0 
+          ? JSON.stringify(activeSchema) 
+          : "Schema loading...";
+
+      setTerminalLines(prev => [...prev, `[DATA] Schema Loaded: ${Object.keys(activeSchema).length} definitions.`]);
 
       try {
-        // Construct Context
-        // CRITICAL FIX: Providing FULL schema to AI so it knows about 'p_emp_degree' (Education)
-        const schemaFull = {
-            employeename: "员工姓名",
-            P_emp_no: "工号 (ID)",
-            Departmentid: "部门ID (关联表)",
-            P_emp_sex: "性别 (男/女)",
-            p_emp_phone: "电话",
-            P_emp_Status: "在职状态 (正式/试用/离职)",
-            p_emp_degree: "学历/学位 (本科/大专/硕士...)", // Explicitly added for correct mapping
-            P_emp_workJoindt: "入职时间 (YYYY-MM-DD)"
-        };
+        // Construct Context with DYNAMIC Schema
         const deptMappingSample = currentDepts.slice(0, 15).map(d => `${d.Departmentid}:${d.departmentname}`).join(",");
 
         const systemPrompt = `
 Context: HR Dashboard Data. 
-Data Schema (Column -> Meaning): ${JSON.stringify(schemaFull)}.
+Data Schema (Column -> Meaning): ${schemaKeys}.
 Department IDs: ${deptMappingSample}.
 
 Query: "${userQuery}"
 
 Task: Return VALID JSON to configure charts based on the schema above.
-If the user asks for "Education" or "Degree", use 'p_emp_degree'.
-If the user asks for "Gender", use 'P_emp_sex'.
-If the user asks for "Status", use 'P_emp_Status'.
+IMPORTANT: Use exact column names from the provided schema (e.g., if schema says 'p_emp_degree', do not use 'degree').
 
 Format:
 {
@@ -287,7 +300,6 @@ Format:
         // Call API
         await aliyunService.chatStream([{ role: 'system', content: systemPrompt }], (chunk) => {
             fullResponse += chunk;
-            // UPDATE: Show the raw code growing on screen
             setCodeStream(prev => prev + chunk);
         });
 
@@ -299,7 +311,6 @@ Format:
         const jsonMatch = fullResponse.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
             const config = JSON.parse(jsonMatch[0]);
-            // Tiny delay to let user see the "100%" completion
             await new Promise(r => setTimeout(r, 800));
             setAiReportConfig(config);
         } else {
@@ -319,13 +330,12 @@ Format:
                   { id: 'fb3', type: 'bar', title: '部门分布', field: 'Departmentid' }
               ]
           };
-          // Show error for a moment then switch
           setTimeout(() => setAiReportConfig(fallbackConfig), 2000);
 
       } finally {
           clearInterval(ingestionInterval);
           clearInterval(keepAliveInterval);
-          setProcessedCount(targetCount); // Ensure 100%
+          setProcessedCount(targetCount); 
           setIsAiGenerating(false);
       }
   };
@@ -446,6 +456,14 @@ Format:
             </div>
 
             <div className="flex items-center gap-3">
+               <button 
+                  onClick={() => setIsSchemaOpen(true)} 
+                  className="hidden md:flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-xs font-bold text-slate-300 transition-all border border-white/10"
+                  title="查看数据字典 (AI 知识库)"
+               >
+                  <TableProperties size={14} /> 字段字典
+               </button>
+
                <button 
                   onClick={() => {
                       setIsAnalysisOpen(true);
@@ -612,7 +630,59 @@ Format:
             </div>
          )}
 
-         {/* 4. DYNAMIC BI Dashboard (Analysis Mode) - Boss View */}
+         {/* 4. NEW: Schema Reference Modal */}
+         {isSchemaOpen && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+               <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm" onClick={() => setIsSchemaOpen(false)} />
+               <div className="relative w-full max-w-lg bg-[#0F1629] border border-white/10 rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95">
+                  <div className="px-6 py-4 border-b border-white/5 bg-white/[0.02] flex items-center justify-between">
+                     <div className="flex items-center gap-2">
+                        <div className="p-2 rounded-lg bg-blue-500/10 text-blue-400">
+                           <TableProperties size={18} />
+                        </div>
+                        <div>
+                           <h3 className="font-bold text-white text-base">数据字典 (AI 知识库)</h3>
+                           <p className="text-xs text-slate-400">AI 已自动学习以下字段定义</p>
+                        </div>
+                     </div>
+                     <button onClick={() => setIsSchemaOpen(false)} className="p-1.5 rounded-full hover:bg-white/10 text-slate-400 hover:text-white"><X size={18}/></button>
+                  </div>
+                  
+                  <div className="max-h-[60vh] overflow-y-auto">
+                    {Object.keys(dataSchema).length === 0 ? (
+                        <div className="p-8 text-center text-slate-500 text-sm">
+                           <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 opacity-50"/>
+                           正在从云端加载数据定义...
+                        </div>
+                    ) : (
+                        <table className="w-full text-left border-collapse">
+                           <thead className="bg-black/20 text-xs text-slate-500 uppercase font-medium">
+                              <tr>
+                                 <th className="px-6 py-3 border-b border-white/5">数据库列名</th>
+                                 <th className="px-6 py-3 border-b border-white/5">业务含义</th>
+                              </tr>
+                           </thead>
+                           <tbody className="divide-y divide-white/5 text-sm">
+                              {Object.entries(dataSchema).map(([col, desc]) => (
+                                 <tr key={col} className="hover:bg-white/[0.02]">
+                                    <td className="px-6 py-3 font-mono text-indigo-300">{col}</td>
+                                    <td className="px-6 py-3 text-slate-300">{desc}</td>
+                                 </tr>
+                              ))}
+                           </tbody>
+                        </table>
+                    )}
+                  </div>
+                  
+                  <div className="p-4 border-t border-white/5 bg-black/20 text-xs text-slate-500 flex items-center gap-2">
+                     <Sparkles size={12} className="text-blue-400" />
+                     <span>您可以使用自然语言直接询问这些字段，例如：“分析一下学历分布”。</span>
+                  </div>
+               </div>
+            </div>
+         )}
+
+         {/* 5. DYNAMIC BI Dashboard (Analysis Mode) */}
          {isAnalysisOpen && (
             <div className="absolute inset-0 z-50 bg-[#0F1629] flex flex-col animate-in slide-in-from-bottom-10 duration-500">
                {/* Header */}

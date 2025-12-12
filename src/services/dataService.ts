@@ -2,6 +2,28 @@ import { supabase } from './supabaseClient';
 import { Announcement, Module, DashboardStats, Profile } from '../../types';
 
 export const dataService = {
+  // --- Data Dictionary (Schema) ---
+  async getDataDictionary(tableName: string = 'p_employeetab'): Promise<Record<string, string>> {
+    const { data, error } = await supabase
+      .from('system_data_dictionary')
+      .select('column_name, description')
+      .eq('table_name', tableName);
+
+    if (error) {
+      console.error('Error fetching data dictionary:', error);
+      return {};
+    }
+
+    // Convert to simple Key-Value pair: { "P_emp_sex": "性别", ... }
+    const schemaMap: Record<string, string> = {};
+    data?.forEach((row: any) => {
+      schemaMap[row.column_name] = row.description;
+    });
+    return schemaMap;
+  },
+
+  // ... (Existing methods below) ...
+
   async getActiveAnnouncements(): Promise<Announcement[]> {
     const { data, error } = await supabase
       .from('announcements')

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Bot, Mic, Send, X, Sparkles, MicOff, Zap, BarChart3 } from 'lucide-react';
+import { Bot, Mic, Send, X, Sparkles, MicOff, Zap, BarChart3, AlertTriangle } from 'lucide-react';
 
 interface AISpriteProps {
   onNavigate: (view: string, params?: any) => void;
@@ -23,52 +23,63 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
 
   // Initialize Speech Recognition
   useEffect(() => {
-    if ('webkitSpeechRecognition' in window) {
-      const SpeechRecognition = (window as any).webkitSpeechRecognition;
-      const recognition = new SpeechRecognition();
-      recognition.continuous = true;
-      recognition.interimResults = true; // CRITICAL: Allow partial results for instant wake word
-      recognition.lang = 'zh-CN';
-
-      recognition.onresult = (event: any) => {
-        let interimTranscript = '';
-        let finalTranscript = '';
-
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-           if (event.results[i].isFinal) {
-              finalTranscript += event.results[i][0].transcript;
-           } else {
-              interimTranscript += event.results[i][0].transcript;
-           }
-        }
-
-        // 1. Check Interim (Fastest reaction for wake word)
-        if (interimTranscript) handleVoiceCommand(interimTranscript, true);
-        
-        // 2. Check Final (For full commands)
-        if (finalTranscript) handleVoiceCommand(finalTranscript, false);
-      };
-
-      recognition.onend = () => {
-        // Auto-restart if it was supposed to be listening (Chrome stops it sometimes)
-        if (isListening) {
-           try { recognition.start(); } catch (e) { /* ignore already started */ }
-        }
-      };
-
-      recognition.onerror = (event: any) => {
-        if (event.error === 'not-allowed') {
-           setIsListening(false);
-           showFeedback("无法访问麦克风 (请检查权限)");
-        } else if (event.error === 'no-speech') {
-           // Ignore no-speech errors, just keep listening
-        } else {
-           console.warn("Speech Error:", event.error);
-        }
-      };
-
-      recognitionRef.current = recognition;
+    // Check for browser support
+    if (!('webkitSpeechRecognition' in window)) {
+        return;
     }
+
+    const SpeechRecognition = (window as any).webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true; // CRITICAL: Allow partial results for instant wake word
+    recognition.lang = 'zh-CN';
+
+    recognition.onresult = (event: any) => {
+      let interimTranscript = '';
+      let finalTranscript = '';
+
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript;
+          } else {
+            interimTranscript += event.results[i][0].transcript;
+          }
+      }
+
+      // 1. Check Interim (Fastest reaction for wake word)
+      if (interimTranscript) handleVoiceCommand(interimTranscript, true);
+      
+      // 2. Check Final (For full commands)
+      if (finalTranscript) handleVoiceCommand(finalTranscript, false);
+    };
+
+    recognition.onend = () => {
+      // Auto-restart if it was supposed to be listening (Chrome stops it sometimes)
+      if (isListening) {
+          try { recognition.start(); } catch (e) { /* ignore already started */ }
+      }
+    };
+
+    recognition.onerror = (event: any) => {
+      console.warn("Speech Error Code:", event.error);
+      
+      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+          setIsListening(false);
+          // Distinguish between user denial and insecure context block
+          if (!window.isSecureContext) {
+              showFeedback("环境不安全: 麦克风需 HTTPS");
+              speak("请使用 HTTPS 或本地环境");
+          } else {
+              showFeedback("麦克风权限被拒绝");
+          }
+      } else if (event.error === 'no-speech') {
+          // Ignore no-speech errors, just keep listening
+      } else if (event.error === 'network') {
+          showFeedback("语音识别网络错误");
+      }
+    };
+
+    recognitionRef.current = recognition;
     
     return () => {
        if (recognitionRef.current) recognitionRef.current.stop();
@@ -177,8 +188,17 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
 
   const toggleListening = (e: React.MouseEvent) => {
     e.stopPropagation();
+    
+    // Check 1: Browser Support
     if (!recognitionRef.current) {
         showFeedback("浏览器不支持语音 (请使用 Chrome)");
+        return;
+    }
+
+    // Check 2: Secure Context (HTTPS or Localhost)
+    if (!window.isSecureContext) {
+        showFeedback("语音需 HTTPS 或 Localhost 环境");
+        speak("安全限制，无法在非安全网页开启麦克风");
         return;
     }
 
@@ -204,7 +224,12 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       {/* Feedback Bubble */}
       {(feedback || (isListening && !isOpen)) && (
         <div className="pointer-events-auto mr-2 animate-in slide-in-from-bottom-2 fade-in duration-300">
-           <div className="bg-white/10 backdrop-blur-xl border border-white/20 text-white text-sm px-4 py-2 rounded-2xl rounded-tr-none shadow-lg max-w-[200px]">
+           <div className={`
+              backdrop-blur-xl border text-sm px-4 py-2 rounded-2xl rounded-tr-none shadow-lg max-w-[220px]
+              ${feedback.includes('不安全') || feedback.includes('HTTPS') 
+                 ? 'bg-red-500/20 border-red-500/30 text-red-200' 
+                 : 'bg-white/10 border-white/20 text-white'}
+           `}>
               {feedback || (isListening ? "Listening..." : "")}
            </div>
         </div>
