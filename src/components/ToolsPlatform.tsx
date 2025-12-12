@@ -1259,126 +1259,166 @@ Return JSON Format:
                         </div>
 
                       </div>
-                  ) : (
-                      <div className="max-w-6xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-6 duration-700">
-                        <div className="relative overflow-hidden p-6 rounded-3xl bg-gradient-to-r from-[#0b1224] via-[#111c33] to-[#0d1a2b] border border-white/10 shadow-[0_20px_60px_-25px_rgba(0,0,0,0.8)]">
-                           <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_20%_20%,rgba(79,70,229,0.18),transparent_35%),radial-gradient(circle_at_80%_10%,rgba(16,185,129,0.18),transparent_30%)]" />
-                           <div className="relative flex items-start justify-between gap-4 flex-wrap">
-                              <div className="space-y-2">
-                                 <div className="flex items-center gap-2 text-sm text-indigo-200 font-semibold">
-                                    <Sparkles size={16}/> 本地即时洞察
-                                 </div>
-                                 <p className="text-white text-lg leading-relaxed max-w-3xl">
-                                    还未连接云端也能秒级看懂数据：我们根据现有字段生成了离线分析、数据质量和部门画像，帮助你快速找到问题入口。
-                                 </p>
-                              </div>
-                              <button
-                                onClick={() => generateDynamicAnalysis(aiParams?.query || '综合人力画像', employees, departments, dataSchema, recruitmentTrend)}
-                                className="px-4 py-2 rounded-full bg-gradient-to-r from-indigo-500/60 to-blue-500/60 border border-indigo-400/40 text-white text-xs hover:from-indigo-500 hover:to-blue-500 transition-all shadow-lg shadow-indigo-900/40 flex items-center gap-2"
-                              >
-                                 <RefreshCw size={14}/> 一键云端深析
-                              </button>
-                           </div>
+           ) : (
+  <div className="max-w-6xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-6 duration-700">
+    <div className="relative overflow-hidden p-6 rounded-3xl bg-gradient-to-r from-[#0b1224] via-[#111c33] to-[#0d1a2b] border border-white/10 shadow-[0_20px_60px_-25px_rgba(0,0,0,0.8)]">
+      <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_20%_20%,rgba(79,70,229,0.18),transparent_35%),radial-gradient(circle_at_80%_10%,rgba(16,185,129,0.18),transparent_30%)]" />
 
-                           <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mt-4">
-                              {[{ label: '在册员工', value: baselineStats.total, hint: '当前总样本量', color: 'from-emerald-500/20 via-emerald-500/10 to-emerald-500/5' },
-                                { label: '覆盖部门', value: baselineStats.deptTotal, hint: '涉及的部门数', color: 'from-blue-500/20 via-blue-500/10 to-blue-500/5' },
-                                { label: '近一年入职', value: baselineStats.recentHires, hint: '最新年份的新增', color: 'from-indigo-500/20 via-indigo-500/10 to-indigo-500/5' },
-                                { label: '电话缺失', value: baselineStats.missingPhones, hint: '待补充联系方式', color: 'from-amber-500/20 via-amber-500/10 to-amber-500/5' }
-                              ].map(item => (
-                                <div key={item.label} className={`p-4 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-sm relative overflow-hidden`}> 
-                                   <div className={`absolute inset-0 bg-gradient-to-br ${item.color} opacity-60`} />
-                                   <div className="relative">
-                                     <div className="text-xs text-slate-400 flex items-center gap-2">
-                                        <div className="w-1.5 h-1.5 rounded-full bg-white/50 animate-pulse" />
-                                        {item.label}
-                                     </div>
-                                     <div className="text-2xl font-bold text-white mt-1">{item.value}</div>
-                                     <div className="text-[11px] text-slate-300/80">{item.hint}</div>
-                                   </div>
-                                </div>
-                              ))}
-                           </div>
+      <div className="relative flex items-start justify-between gap-4 flex-wrap">
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 text-sm text-indigo-200 font-semibold">
+            <Sparkles size={16} /> 本地即时洞察
+          </div>
+          <p className="text-white text-lg leading-relaxed max-w-3xl">
+            还未连接云端也能秒级看懂数据：我们根据现有字段生成了离线分析、数据质量和部门画像，帮助你快速找到问题入口。
+          </p>
+        </div>
 
-                           <div className="relative mt-4 text-xs text-slate-300 flex items-center gap-2">
-                              <Activity size={12}/> 平均任职时长约 <span className="text-indigo-100 font-semibold">{baselineStats.avgTenure} 年</span>，可对比各部门梯队稳定性。
-                           </div>
-                        </div>
+        <button
+          onClick={() =>
+            generateDynamicAnalysis(
+              aiParams?.query || '综合人力画像',
+              employees,
+              departments,
+              dataSchema,
+              recruitmentTrend
+            )
+          }
+          className="px-4 py-2 rounded-full bg-gradient-to-r from-indigo-500/60 to-blue-500/60 border border-indigo-400/40 text-white text-xs hover:from-indigo-500 hover:to-blue-500 transition-all shadow-lg shadow-indigo-900/40 flex items-center gap-2"
+        >
+          <RefreshCw size={14} /> 一键云端深析
+        </button>
+      </div>
 
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                           <div className="lg:col-span-2 p-6 rounded-3xl bg-white/5 border border-white/10 space-y-4">
-                              <div className="flex items-center gap-2 text-sm font-semibold text-white">
-                                 <BarChart3 size={16} className="text-blue-400"/> 部门画像快照
-                              </div>
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                 {deptSnapshots.map(dept => (
-                                    <div key={dept.deptName} className="p-4 rounded-2xl bg-black/30 border border-white/5 space-y-2">
-                                       <div className="flex items-center justify-between">
-                                          <div className="text-white font-semibold">{dept.deptName}</div>
-                                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-200">{dept.count} 人</span>
-                                       </div>
-                                       <div className="text-[11px] text-slate-400">男 {dept.male} / 女 {dept.female}</div>
-                                       <div className="flex items-center gap-2 text-[11px] text-slate-400">
-                                          <Database size={12} className="text-indigo-400"/> 学历完备度
-                                          <div className="flex-1 h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                                             <div className="h-full bg-indigo-500" style={{ width: `${dept.degreeCoverage}%` }}></div>
-                                          </div>
-                                          <span className="text-indigo-200 font-mono">{dept.degreeCoverage}%</span>
-                                       </div>
-                                    </div>
-                                 ))}
-                                 {!deptSnapshots.length && (
-                                    <div className="col-span-full text-xs text-slate-500">暂无部门画像数据，请先加载员工信息。</div>
-                                 )}
-                              </div>
-                           </div>
-
-                           <div className="p-6 rounded-3xl bg-white/5 border border-white/10 space-y-4">
-                              <div className="flex items-center gap-2 text-sm font-semibold text-white">
-                                 <ShieldAlert size={16} className="text-amber-400"/> 数据质量速览
-                              </div>
-                              <div className="space-y-3">
-                                 {dataQualityMetrics.map(metric => (
-                                    <div key={metric.title} className="p-3 rounded-xl bg-black/30 border border-white/5">
-                                       <div className="flex items-center justify-between">
-                                          <div className="text-sm text-white">{metric.title}</div>
-                                          <span className="text-[11px] text-indigo-200 font-mono">{metric.value}%</span>
-                                       </div>
-                                       <div className="text-[11px] text-slate-500 mt-1">{metric.desc}</div>
-                                       <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden mt-2">
-                                          <div className={`h-full bg-gradient-to-r from-indigo-500 to-blue-500`} style={{ width: `${metric.value}%` }}></div>
-                                       </div>
-                                    </div>
-                                 ))}
-                              </div>
-                           </div>
-                        </div>
-
-                        {localInsights.length > 0 && (
-                           <div className="p-6 rounded-3xl bg-black/40 border border-white/10 space-y-3">
-                              <div className="flex items-center gap-2 text-sm font-semibold text-white">
-                                 <Sparkles size={16} className="text-emerald-400"/> 本地启发式洞察
-                              </div>
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                 {localInsights.map(item => (
-                                    <div key={item.title} className="p-4 rounded-2xl bg-white/5 border border-white/10">
-                                       <div className="flex items-center justify-between mb-2">
-                                          <div className="text-white font-semibold">{item.title}</div>
-                                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-200">{item.tag}</span>
-                                       </div>
-                                       <p className="text-xs text-slate-300 leading-relaxed">{item.desc}</p>
-                                    </div>
-                                 ))}
-                              </div>
-                           </div>
-                        )}
-                      </div>
-                  )}
-               </div>
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mt-4">
+        {[
+          {
+            label: '在册员工',
+            value: baselineStats.total,
+            hint: '当前总样本量',
+            color: 'from-emerald-500/20 via-emerald-500/10 to-emerald-500/5',
+          },
+          {
+            label: '覆盖部门',
+            value: baselineStats.deptTotal,
+            hint: '涉及的部门数',
+            color: 'from-blue-500/20 via-blue-500/10 to-blue-500/5',
+          },
+          {
+            label: '近一年入职',
+            value: baselineStats.recentHires,
+            hint: '最新年份的新增',
+            color: 'from-indigo-500/20 via-indigo-500/10 to-indigo-500/5',
+          },
+          {
+            label: '电话缺失',
+            value: baselineStats.missingPhones,
+            hint: '待补充联系方式',
+            color: 'from-amber-500/20 via-amber-500/10 to-amber-500/5',
+          },
+        ].map((item) => (
+          <div
+            key={item.label}
+            className="p-4 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-sm relative overflow-hidden"
+          >
+            <div className={`absolute inset-0 bg-gradient-to-br ${item.color} opacity-60`} />
+            <div className="relative">
+              <div className="text-xs text-slate-400 flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-white/50 animate-pulse" />
+                {item.label}
+              </div>
+              <div className="text-2xl font-bold text-white mt-1">{item.value}</div>
+              <div className="text-[11px] text-slate-300/80">{item.hint}</div>
             </div>
-         )}
+          </div>
+        ))}
+      </div>
+
+      <div className="relative mt-4 text-xs text-slate-400 flex items-center gap-2">
+        <Activity size={12} /> 平均任职时长约{' '}
+        <span className="text-indigo-200 font-semibold">{baselineStats.avgTenure} 年</span>，可对比各部门梯队稳定性。
+      </div>
     </div>
-  );
+
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="lg:col-span-2 p-6 rounded-3xl bg-white/5 border border-white/10 space-y-4">
+        <div className="flex items-center gap-2 text-sm font-semibold text-white">
+          <BarChart3 size={16} className="text-blue-400" /> 部门画像快照
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {deptSnapshots.map((dept) => (
+            <div key={dept.deptName} className="p-4 rounded-2xl bg-black/30 border border-white/5 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="text-white font-semibold">{dept.deptName}</div>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-200">
+                  {dept.count} 人
+                </span>
+              </div>
+              <div className="text-[11px] text-slate-400">
+                男 {dept.male} / 女 {dept.female}
+              </div>
+              <div className="flex items-center gap-2 text-[11px] text-slate-400">
+                <Database size={12} className="text-indigo-400" /> 学历完备度
+                <div className="flex-1 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-indigo-500" style={{ width: `${dept.degreeCoverage}%` }} />
+                </div>
+                <span className="text-indigo-200 font-mono">{dept.degreeCoverage}%</span>
+              </div>
+            </div>
+          ))}
+          {!deptSnapshots.length && (
+            <div className="col-span-full text-xs text-slate-500">暂无部门画像数据，请先加载员工信息。</div>
+          )}
+        </div>
+      </div>
+
+      <div className="p-6 rounded-3xl bg-white/5 border border-white/10 space-y-4">
+        <div className="flex items-center gap-2 text-sm font-semibold text-white">
+          <ShieldAlert size={16} className="text-amber-400" /> 数据质量速览
+        </div>
+        <div className="space-y-3">
+          {dataQualityMetrics.map((metric) => (
+            <div key={metric.title} className="p-3 rounded-xl bg-black/30 border border-white/5">
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-white">{metric.title}</div>
+                <span className="text-[11px] text-indigo-200 font-mono">{metric.value}%</span>
+              </div>
+              <div className="text-[11px] text-slate-500 mt-1">{metric.desc}</div>
+              <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden mt-2">
+                <div
+                  className="h-full bg-gradient-to-r from-indigo-500 to-blue-500"
+                  style={{ width: `${metric.value}%` }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+
+    {localInsights.length > 0 && (
+      <div className="p-6 rounded-3xl bg-black/40 border border-white/10 space-y-3">
+        <div className="flex items-center gap-2 text-sm font-semibold text-white">
+          <Sparkles size={16} className="text-emerald-400" /> 本地启发式洞察
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {localInsights.map((item) => (
+            <div key={item.title} className="p-4 rounded-2xl bg-white/5 border border-white/10">
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-white font-semibold">{item.title}</div>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-200">
+                  {item.tag}
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 leading-relaxed">{item.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
+  </div>
+)
+;
 };
 
 export default ToolsPlatform;
