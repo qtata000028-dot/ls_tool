@@ -8,8 +8,6 @@ interface AISpriteProps {
 const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isListening, setIsListening] = useState(false);
-
-  // Debug/visual
   const [capturedSpeech, setCapturedSpeech] = useState('');
   const [inputText, setInputText] = useState('');
   const [feedback, setFeedback] = useState('');
@@ -31,6 +29,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
   const speak = (text: string) => {
     try {
       if (!synthRef.current) return;
+      // 某些浏览器需要用户先有一次交互才允许播放，点击开启监听后就满足了
       synthRef.current.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = 'zh-CN';
@@ -54,21 +53,27 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       .trim()
       .toLowerCase();
 
-  // 只想“双唤醒”就留 ['小朗小朗']，不要 '小朗'
-  const wakeWordPatterns = ['小朗小朗', '小朗'];
+  // ✅ 唤醒词：支持「小朗小朗」被识别成「小浪小浪/小狼小狼/小郎小郎/小廊小廊」
+  // 如果你只想“双唤醒”，就保持只用 double；如果想支持单唤醒，把 single 也打开
+  const doubleWakeTest = /小[朗浪狼郎廊]\s*小[朗浪狼郎廊]/; // 注意：不加 g，避免 test() lastIndex 问题
+  // const singleWakeTest = /小[朗浪狼郎廊]/;
+
+  const doubleWakeStrip = /小[朗浪狼郎廊]\s*小[朗浪狼郎廊]/g;
+  // const singleWakeStrip = /小[朗浪狼郎廊]/g;
 
   const detectWakeWord = (text: string) => {
-    const t = normalize(text);
-    if (!t) return false;
-    return wakeWordPatterns.some((p) => t.includes(p));
+    const t = (text || '').replace(/\s+/g, '');
+    // 只双唤醒
+    return doubleWakeTest.test(t);
+    // 双+单唤醒
+    // return doubleWakeTest.test(t) || singleWakeTest.test(t);
   };
 
   const stripWakeWord = (text: string) => {
     let t = normalize(text);
-    wakeWordPatterns.forEach((p) => {
-      // replaceAll 在现代浏览器可用；如果要兼容更老，可改用 split/join
-      t = t.replaceAll(p, ' ');
-    });
+    t = t.replace(doubleWakeStrip, ' ');
+    // 需要单唤醒再打开：
+    // t = t.replace(singleWakeStrip, ' ');
     return t.replace(/\s+/g, ' ').trim();
   };
 
@@ -135,8 +140,9 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
 
   /**
    * 语音入口：实时处理
-   * - 未唤醒：只找唤醒词
+   * - 未唤醒：只找唤醒词（interim最快）
    * - 已唤醒：收集命令，final 时执行
+   * - 支持“一口气说完”：小朗小朗 打开知识库
    */
   const handleVoiceStream = (transcript: string, isFinal: boolean) => {
     const now = Date.now();
@@ -147,20 +153,27 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     const normalized = normalize(raw);
     if (!normalized) return;
 
-    // 1) 未唤醒：检测唤醒词（interim最快）
+    // 1) 未唤醒：检测唤醒词
     if (!isWakeWordActiveRef.current) {
       if (detectWakeWord(normalized)) {
         isWakeWordActiveRef.current = true;
         setIsWakeWordDetected(true);
-        showFeedback('已唤醒：请说出指令（如：分析学历分布）');
+        showFeedback('我在：请说出指令（如：打开知识库 / 分析学历分布）');
         speak('我在，请说出指令');
         armWakeWordTimeout();
 
-        // 如果唤醒词后面已经跟了内容，直接当作命令缓冲
+        // 如果唤醒词后面已经跟了内容，作为命令 tail
         const tail = stripWakeWord(normalized);
         if (tail) {
           commandBufferRef.current = tail;
           setCapturedSpeech(tail);
+
+          // 如果这次是 final，直接执行（支持“一口气说完”）
+          if (isFinal) {
+            const cmd = tail.replace(/确认|执行/g, '').trim();
+            executeCommand(cmd);
+            resetWakeWordState();
+          }
         }
       }
       return;
@@ -177,25 +190,20 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       return;
     }
 
-    // 如果用户又重复说了唤醒词，去掉
     const cleaned = stripWakeWord(normalized);
     if (!cleaned) return;
 
-    // interim：只是更新缓冲与UI
     if (!isFinal) {
       commandBufferRef.current = cleaned;
       setCapturedSpeech(cleaned);
       return;
     }
 
-    // final：执行
     commandBufferRef.current = cleaned;
     setCapturedSpeech(cleaned);
 
-    // 允许末尾“确认/执行”
     const cmd = cleaned.replace(/确认|执行/g, '').trim();
     executeCommand(cmd);
-
     resetWakeWordState();
   };
 
@@ -212,6 +220,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
 
     const SpeechRecognition = (window as any).webkitSpeechRecognition;
     const recognition = new SpeechRecognition();
+
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = 'zh-CN';
@@ -228,7 +237,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
         else interimTranscript += txt;
       }
 
-      // 仅用于界面可视化（避免无限增长）
+      // 仅用于界面预览（避免无限增长）
       const preview = normalize(`${finalTranscript} ${interimTranscript}`).slice(0, 180);
       if (preview) setCapturedSpeech(preview);
 
@@ -237,18 +246,18 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     };
 
     recognition.onend = () => {
-      // Chrome 会莫名停，保持监听状态就自动重启
+      // Chrome 有时会自己停：如果我们仍处在监听状态，就自动重启
       if (isListeningRef.current) {
         try {
           recognition.start();
         } catch {
-          // ignore "already started"
+          // ignore already started
         }
       }
     };
 
     recognition.onerror = (event: any) => {
-      console.warn('Speech Error Code:', event.error);
+      console.warn('Speech Error Code:', event?.error);
 
       if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
         setIsListening(false);
@@ -274,6 +283,8 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
         showFeedback('语音识别网络错误');
         return;
       }
+
+      showFeedback('语音识别异常，请重试');
     };
 
     recognitionRef.current = recognition;
@@ -284,6 +295,8 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       } catch {
         // ignore
       }
+      if (feedbackTimeoutRef.current) window.clearTimeout(feedbackTimeoutRef.current);
+      if (wakeWordTimerRef.current) window.clearTimeout(wakeWordTimerRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -313,6 +326,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       return;
     }
 
+    // 关闭监听
     if (isListening) {
       try {
         recognitionRef.current.stop();
@@ -321,11 +335,6 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       }
       setIsListening(false);
       isListeningRef.current = false;
-
-      // 如果唤醒态里有缓冲命令，停止时也执行一次（可选）
-      const buffered = commandBufferRef.current?.trim();
-      if (buffered) executeCommand(buffered);
-
       resetWakeWordState();
       showFeedback('语音已关闭');
       return;
@@ -337,16 +346,18 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
 
       resetWakeWordState();
       setCapturedSpeech('');
+
       try {
         recognitionRef.current.start();
       } catch {
         // ignore already started
       }
+
       setIsListening(true);
       isListeningRef.current = true;
 
-      showFeedback('监听中：请说“小朗小朗”唤醒');
-      speak('我在，请说小朗小朗唤醒我');
+      showFeedback('监听中：请说“小朗小朗”唤醒（也支持识别成“小浪小浪”）');
+      speak('我在听，请说小朗小朗唤醒我');
     } catch (err) {
       console.warn('语音启动失败', err);
       showFeedback('语音启动失败，请确认麦克风权限');
@@ -406,7 +417,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
                 <div className="flex items-center gap-2">
                   <div className={`w-2 h-2 rounded-full ${isListening ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}`} />
                   <span className="font-medium text-white/70">
-                    {isListening ? '监听中：说“小朗小朗”唤醒' : '点击麦克风开启监听（需要权限）'}
+                    {isListening ? '监听中：说“小朗小朗”（允许误识别为“小浪小浪”）' : '点击麦克风开启监听（需要权限）'}
                   </span>
                 </div>
 
