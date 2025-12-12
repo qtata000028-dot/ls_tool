@@ -252,6 +252,52 @@ const ToolsPlatform: React.FC<ToolsPlatformProps> = ({ onBack, aiParams }) => {
     return insights.slice(0, 4);
   }, [employees, departments, recruitmentTrend, dataQualityMetrics]);
 
+  const baselineStats = useMemo(() => {
+    const total = employees.length;
+    const deptTotal = new Set(employees.map(emp => String(emp.Departmentid))).size || departments.length;
+    const lastTrend = recruitmentTrend[recruitmentTrend.length - 1];
+    const recentHires = lastTrend?.count || 0;
+    const missingPhones = employees.filter(e => !e.p_emp_phone).length;
+
+    const tenureYears = employees
+      .map(emp => {
+        if (!emp.P_emp_workJoindt) return null;
+        const joined = new Date(emp.P_emp_workJoindt);
+        if (isNaN(joined.getTime())) return null;
+        return (Date.now() - joined.getTime()) / (1000 * 60 * 60 * 24 * 365);
+      })
+      .filter((n): n is number => n !== null);
+    const avgTenure = tenureYears.length
+      ? Math.round((tenureYears.reduce((a, b) => a + b, 0) / tenureYears.length) * 10) / 10
+      : 0;
+
+    return { total, deptTotal, recentHires, missingPhones, avgTenure };
+  }, [employees, departments, recruitmentTrend]);
+
+  const deptSnapshots = useMemo(() => {
+    const map: Record<string, { count: number; male: number; female: number; degreeFilled: number }> = {};
+
+    employees.forEach(emp => {
+      const deptName = departments.find(d => String(d.Departmentid) === String(emp.Departmentid))?.departmentname || '未知部门';
+      if (!map[deptName]) {
+        map[deptName] = { count: 0, male: 0, female: 0, degreeFilled: 0 };
+      }
+      map[deptName].count += 1;
+      if (emp.P_emp_sex === '男') map[deptName].male += 1;
+      if (emp.P_emp_sex === '女') map[deptName].female += 1;
+      if (emp.p_emp_degree) map[deptName].degreeFilled += 1;
+    });
+
+    return Object.entries(map)
+      .map(([deptName, info]) => ({
+        deptName,
+        ...info,
+        degreeCoverage: info.count ? Math.round((info.degreeFilled / info.count) * 100) : 0
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 4);
+  }, [employees, departments]);
+
   // --- CINEMATIC LOADING STATES ---
   const [terminalLines, setTerminalLines] = useState<string[]>([]);
   const [codeStream, setCodeStream] = useState(""); 
@@ -1213,7 +1259,114 @@ Return JSON Format:
                         </div>
 
                       </div>
-                  ) : null}
+                  ) : (
+                      <div className="max-w-6xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-6 duration-700">
+                        <div className="p-6 rounded-3xl bg-gradient-to-r from-slate-900/80 to-indigo-900/50 border border-white/10 shadow-2xl">
+                           <div className="flex items-start justify-between gap-4 flex-wrap">
+                              <div className="space-y-2">
+                                 <div className="flex items-center gap-2 text-sm text-indigo-200 font-semibold">
+                                    <Sparkles size={16}/> 本地即时洞察
+                                 </div>
+                                 <p className="text-white text-lg leading-relaxed max-w-3xl">
+                                    还未连接云端也能秒级看懂数据：我们根据现有字段生成了离线分析、数据质量和部门画像，帮助你快速找到问题入口。
+                                 </p>
+                              </div>
+                              <button
+                                onClick={() => generateDynamicAnalysis(aiParams?.query || '综合人力画像', employees, departments, dataSchema, recruitmentTrend)}
+                                className="px-4 py-2 rounded-full bg-indigo-500/20 border border-indigo-500/40 text-indigo-100 text-xs hover:bg-indigo-500/30 transition-colors flex items-center gap-2"
+                              >
+                                 <RefreshCw size={14}/> 一键云端深析
+                              </button>
+                           </div>
+
+                           <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mt-4">
+                              {[{ label: '在册员工', value: baselineStats.total, hint: '当前总样本量' },
+                                { label: '覆盖部门', value: baselineStats.deptTotal, hint: '涉及的部门数' },
+                                { label: '近一年入职', value: baselineStats.recentHires, hint: '最新年份的新增' },
+                                { label: '电话缺失', value: baselineStats.missingPhones, hint: '待补充联系方式' }
+                              ].map(item => (
+                                <div key={item.label} className="p-4 rounded-2xl bg-white/5 border border-white/10">
+                                   <div className="text-xs text-slate-400">{item.label}</div>
+                                   <div className="text-2xl font-bold text-white mt-1">{item.value}</div>
+                                   <div className="text-[11px] text-slate-500">{item.hint}</div>
+                                </div>
+                              ))}
+                           </div>
+
+                           <div className="mt-4 text-xs text-slate-400 flex items-center gap-2">
+                              <Activity size={12}/> 平均任职时长约 <span className="text-indigo-200 font-semibold">{baselineStats.avgTenure} 年</span>，可对比各部门梯队稳定性。
+                           </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                           <div className="lg:col-span-2 p-6 rounded-3xl bg-white/5 border border-white/10 space-y-4">
+                              <div className="flex items-center gap-2 text-sm font-semibold text-white">
+                                 <BarChart3 size={16} className="text-blue-400"/> 部门画像快照
+                              </div>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                 {deptSnapshots.map(dept => (
+                                    <div key={dept.deptName} className="p-4 rounded-2xl bg-black/30 border border-white/5 space-y-2">
+                                       <div className="flex items-center justify-between">
+                                          <div className="text-white font-semibold">{dept.deptName}</div>
+                                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-200">{dept.count} 人</span>
+                                       </div>
+                                       <div className="text-[11px] text-slate-400">男 {dept.male} / 女 {dept.female}</div>
+                                       <div className="flex items-center gap-2 text-[11px] text-slate-400">
+                                          <Database size={12} className="text-indigo-400"/> 学历完备度
+                                          <div className="flex-1 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                                             <div className="h-full bg-indigo-500" style={{ width: `${dept.degreeCoverage}%` }}></div>
+                                          </div>
+                                          <span className="text-indigo-200 font-mono">{dept.degreeCoverage}%</span>
+                                       </div>
+                                    </div>
+                                 ))}
+                                 {!deptSnapshots.length && (
+                                    <div className="col-span-full text-xs text-slate-500">暂无部门画像数据，请先加载员工信息。</div>
+                                 )}
+                              </div>
+                           </div>
+
+                           <div className="p-6 rounded-3xl bg-white/5 border border-white/10 space-y-4">
+                              <div className="flex items-center gap-2 text-sm font-semibold text-white">
+                                 <ShieldAlert size={16} className="text-amber-400"/> 数据质量速览
+                              </div>
+                              <div className="space-y-3">
+                                 {dataQualityMetrics.map(metric => (
+                                    <div key={metric.title} className="p-3 rounded-xl bg-black/30 border border-white/5">
+                                       <div className="flex items-center justify-between">
+                                          <div className="text-sm text-white">{metric.title}</div>
+                                          <span className="text-[11px] text-indigo-200 font-mono">{metric.value}%</span>
+                                       </div>
+                                       <div className="text-[11px] text-slate-500 mt-1">{metric.desc}</div>
+                                       <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden mt-2">
+                                          <div className={`h-full bg-gradient-to-r from-indigo-500 to-blue-500`} style={{ width: `${metric.value}%` }}></div>
+                                       </div>
+                                    </div>
+                                 ))}
+                              </div>
+                           </div>
+                        </div>
+
+                        {localInsights.length > 0 && (
+                           <div className="p-6 rounded-3xl bg-black/40 border border-white/10 space-y-3">
+                              <div className="flex items-center gap-2 text-sm font-semibold text-white">
+                                 <Sparkles size={16} className="text-emerald-400"/> 本地启发式洞察
+                              </div>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                 {localInsights.map(item => (
+                                    <div key={item.title} className="p-4 rounded-2xl bg-white/5 border border-white/10">
+                                       <div className="flex items-center justify-between mb-2">
+                                          <div className="text-white font-semibold">{item.title}</div>
+                                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-200">{item.tag}</span>
+                                       </div>
+                                       <p className="text-xs text-slate-300 leading-relaxed">{item.desc}</p>
+                                    </div>
+                                 ))}
+                              </div>
+                           </div>
+                        )}
+                      </div>
+                  )}
                </div>
             </div>
          )}
