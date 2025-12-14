@@ -173,6 +173,7 @@ const ToolsPlatform: React.FC<ToolsPlatformProps> = ({ onBack, aiParams }) => {
   const [aiReportConfig, setAiReportConfig] = useState<AIReport | null>(null);
   const [followQuery, setFollowQuery] = useState('');
 
+
   // Recruitment Trend Data (Calculated)
   const [recruitmentTrend, setRecruitmentTrend] = useState<{ year: string; count: number }[]>([]);
 
@@ -660,6 +661,7 @@ Return JSON Format:
   const openEditor = (emp: Employee) => {
     setCurrentEmp({ ...emp });
     setIsEditorOpen(true);
+    setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 0);
   };
 
   const sqlEscape = (v: any) => String(v ?? '').replace(/'/g, "''");
@@ -749,7 +751,7 @@ Return JSON Format:
   const CHART_COLORS = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899', '#6366f1', '#14b8a6'];
 
   return (
-    <div className="w-full h-[85vh] max-w-[1600px] mx-auto bg-[#0F1629]/80 backdrop-blur-2xl border border-white/10 rounded-3xl flex flex-col overflow-hidden shadow-[0_30px_80px_-40px_rgba(0,0,0,0.8)] animate-in fade-in zoom-in-95 duration-500 relative">
+    <div className="w-full min-h-[82vh] md:h-[85vh] max-w-[1600px] mx-auto bg-[#0F1629]/80 backdrop-blur-2xl border border-white/10 rounded-3xl flex flex-col overflow-auto md:overflow-hidden shadow-[0_30px_80px_-40px_rgba(0,0,0,0.8)] animate-in fade-in zoom-in-95 duration-500 relative px-3 sm:px-6">
       <div className="absolute inset-0 pointer-events-none">
         <div className="absolute -left-10 -top-16 w-64 h-64 bg-indigo-500/15 blur-3xl" />
         <div className="absolute right-10 top-10 w-80 h-80 bg-emerald-500/10 blur-[120px]" />
@@ -758,7 +760,7 @@ Return JSON Format:
       </div>
 
       {/* 1. Navbar */}
-      <div className="h-16 px-6 border-b border-white/5 flex items-center justify-between shrink-0 bg-white/[0.04] backdrop-blur-xl relative z-10">
+      <div className="h-auto min-h-[64px] px-2 sm:px-6 py-2 border-b border-white/5 flex items-center justify-between shrink-0 bg-white/[0.04] backdrop-blur-xl relative z-10 rounded-2xl sm:rounded-none mt-3 sm:mt-0">
         <div className="flex items-center gap-4">
           <button
             onClick={onBack}
@@ -887,8 +889,8 @@ Return JSON Format:
         </div>
       </div>
 
-      {/* 2. Table */}
-      <div className="flex-1 overflow-auto custom-scrollbar relative z-10">
+      {/* 2. Table (Desktop) */}
+      <div className="hidden md:block flex-1 overflow-auto custom-scrollbar relative z-10">
         <table className="w-full text-left border-separate border-spacing-0">
           <thead className="sticky top-0 z-20 bg-gradient-to-r from-[#0F1629] via-[#0F1629]/95 to-[#0F1629] text-xs font-bold text-slate-400 uppercase tracking-wider shadow-[0_10px_30px_-20px_rgba(0,0,0,0.8)] backdrop-blur">
             <tr>
@@ -1003,11 +1005,111 @@ Return JSON Format:
         </table>
       </div>
 
+      {/* 2b. Compact table (Mobile) */}
+      <div className="md:hidden px-3 pb-6">
+        <div className="rounded-2xl border border-white/10 bg-white/[0.02] shadow-inner overflow-hidden">
+          <div className="px-4 py-3 text-xs font-semibold text-slate-300 border-b border-white/5 bg-white/[0.03] uppercase tracking-wide">
+            员工列表（轻触行即可编辑）
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[620px] text-left text-[13px]">
+              <thead className="bg-[#0F1629] text-slate-400 text-[11px] border-b border-white/10">
+                <tr>
+                  <th className="px-4 py-3">姓名</th>
+                  <th className="px-4 py-3">工号</th>
+                  <th className="px-4 py-3">部门</th>
+                  <th className="px-4 py-3">状态</th>
+                  <th className="px-4 py-3">电话</th>
+                  <th className="px-4 py-3">入职</th>
+                  <th className="px-4 py-3 text-right">操作</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {loading && employees.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-12 text-center text-slate-500">
+                      <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> 数据同步中...
+                    </td>
+                  </tr>
+                ) : filteredData.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
+                      未找到相关数据
+                    </td>
+                  </tr>
+                ) : (
+                  filteredData.map((row) => {
+                    const isPhoneVisible = visiblePhones.has(row.P_emp_no);
+                    const maskedPhone = row.p_emp_phone
+                      ? row.p_emp_phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2')
+                      : '-';
+
+                    return (
+                      <tr
+                        key={row.P_emp_no}
+                        onClick={() => openEditor(row)}
+                        className="active:bg-white/[0.04] hover:bg-white/[0.03] transition-colors"
+                      >
+                        <td className="px-4 py-3 text-white font-medium">
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-full bg-slate-800 border border-white/10 overflow-hidden flex items-center justify-center text-xs font-bold text-slate-400">
+                              {row.webbmp ? <img src={row.webbmp} className="w-full h-full object-cover" /> : row.employeename?.[0] || 'U'}
+                            </div>
+                            <span>{row.employeename}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-slate-300 font-mono text-[12px]">{row.P_emp_no}</td>
+                        <td className="px-4 py-3 text-slate-300">{getDeptName(row.Departmentid)}</td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] border ${getStatusColor(row.P_emp_Status)}`}>
+                            {row.P_emp_Status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-slate-300 font-mono text-[12px]">
+                          <div className="flex items-center gap-2">
+                            {isPhoneVisible ? row.p_emp_phone : maskedPhone}
+                            {row.p_emp_phone && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  togglePhoneVisibility(row.P_emp_no);
+                                }}
+                                className="p-1 text-slate-500 hover:text-white"
+                              >
+                                {isPhoneVisible ? <EyeOff size={12} /> : <Eye size={12} />}
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-slate-300 text-[12px]">
+                          {row.P_emp_workJoindt ? String(row.P_emp_workJoindt).split('T')[0] : '-'}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openEditor(row);
+                            }}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-indigo-200 text-[11px]"
+                          >
+                            <Edit2 size={14} /> 编辑
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
       {/* 3. Editor Modal */}
       {isEditorOpen && currentEmp && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] flex items-start md:items-center justify-center p-3 sm:p-4">
           <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm" onClick={() => setIsEditorOpen(false)} />
-          <div className="relative w-full max-w-2xl bg-[#0F1629] border border-white/10 rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95">
+          <div className="relative w-full max-w-lg md:max-w-2xl bg-[#0F1629] border border-white/10 rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 h-[90vh] md:h-auto flex flex-col">
             <div className="px-6 py-4 border-b border-white/5 bg-white/[0.02] flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-slate-800 border border-white/10 overflow-hidden flex items-center justify-center">
@@ -1030,7 +1132,7 @@ Return JSON Format:
               </button>
             </div>
 
-            <div className="p-6 grid grid-cols-2 gap-x-6 gap-y-5">
+            <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5 overflow-y-auto flex-1">
               <div className="col-span-1 space-y-1.5">
                 <label className="text-xs font-medium text-slate-400">姓名</label>
                 <input
@@ -1774,6 +1876,7 @@ Return JSON Format:
       )}
     </div>
   );
+
 };
 
 export default ToolsPlatform;

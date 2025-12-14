@@ -86,7 +86,12 @@ const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ onBack }) => {
 
   return (
     // Outer Container: Expanded size, almost full screen height
-    <div className="flex h-[85vh] w-full max-w-[1600px] mx-auto rounded-[24px] overflow-hidden bg-[#020617] border border-white/10 shadow-2xl backdrop-blur-3xl animate-in fade-in zoom-in-95 duration-500">
+    <div className="relative flex h-[85vh] w-full max-w-[1400px] mx-auto rounded-[28px] overflow-hidden bg-gradient-to-br from-[#070d1a] via-[#0c1426] to-[#0a1020] border border-white/10 shadow-[0_30px_90px_-40px_rgba(0,0,0,0.8)] backdrop-blur-3xl animate-in fade-in zoom-in-95 duration-500">
+      <div className="absolute inset-0 pointer-events-none">
+        <div className="absolute -left-10 -top-14 w-56 h-56 bg-emerald-500/10 blur-3xl" />
+        <div className="absolute right-4 top-0 w-72 h-72 bg-blue-600/10 blur-[120px]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.04),transparent_35%),radial-gradient(circle_at_80%_0%,rgba(99,102,241,0.06),transparent_32%)]" />
+      </div>
       
       {/* SIDEBAR (Visual Placeholder for "Pro" feel) */}
       <div className="hidden md:flex flex-col w-64 border-r border-white/5 bg-[#0F1629]/50">
@@ -153,7 +158,7 @@ const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ onBack }) => {
         </div>
 
         {/* Chat Stream */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-8 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent">
+        <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-8 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent bg-white/5 border-t border-b border-white/5">
           {messages.map((msg, idx) => (
             <div 
               key={idx} 
@@ -171,11 +176,11 @@ const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ onBack }) => {
               
               <div className={`
                 max-w-[85%] md:max-w-[70%] rounded-2xl px-6 py-4 text-[15px] leading-relaxed whitespace-pre-wrap shadow-md
-                ${msg.role === 'user' 
-                  ? 'bg-gradient-to-br from-blue-600 to-indigo-600 text-white rounded-tr-sm' 
-                  : msg.content.startsWith('❌') 
+                ${msg.role === 'user'
+                  ? 'bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-tr-sm shadow-[0_15px_45px_-30px_rgba(79,70,229,0.9)]'
+                  : msg.content.startsWith('❌')
                     ? 'bg-red-950/30 text-red-200 border border-red-500/20 rounded-tl-sm'
-                    : 'bg-[#1E293B]/60 backdrop-blur-sm text-slate-200 border border-white/5 rounded-tl-sm'}
+                    : 'bg-[#0f1628]/80 backdrop-blur-xl text-slate-100 border border-white/5 rounded-tl-sm shadow-[0_15px_45px_-30px_rgba(15,23,42,0.8)]'}
               `}>
                 {msg.role === 'assistant' && msg.content === '' && loading ? (
                    <div className="flex gap-1.5 items-center h-6">
