@@ -276,16 +276,15 @@ const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
       // 2. Upload New Image
       setStatusText("正在压缩并上传图片...");
       const result = await dataService.uploadAnalysisImage(uploadedFile);
-      
+
       if (!result || !result.publicUrl) throw new Error("图片上传失败，请检查网络连接。");
-      
+
       // Track the new path for cleanup later
       uploadedImagePathRef.current = result.path;
 
       // 3. Start Analysis
-      setStatusText("AI 正在深度分析 (Qwen-VL-Max)...");
       const finalPrompt = promptInput.trim() || "请详细分析这张图片的内容。识别其中的物体、文字、场景以及任何值得注意的细节。";
-      
+
       const messages: VLMessage[] = [
         {
           role: 'user',
@@ -296,42 +295,68 @@ const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
         }
       ];
 
-      let hasReceivedFirstToken = false;
-      let fullResponse = "";
+      const runStreamWithRetry = async () => {
+        let attempt = 0;
+        let hasReceivedFirstToken = false;
+        let fullResponse = "";
 
-      const timeoutId = setTimeout(() => {
-        if (!hasReceivedFirstToken) {
-           if (abortControllerRef.current) abortControllerRef.current.abort();
-           setErrorMsg("请求超时：AI 响应时间过长，请检查网络或重试。");
-           setIsAnalyzing(false);
-           setStatusText("");
+        const startTimeoutGuard = () => setTimeout(() => {
+          if (!hasReceivedFirstToken) {
+            if (abortControllerRef.current) abortControllerRef.current.abort();
+            setErrorMsg("请求超时：AI 响应时间过长，请检查网络或重试。");
+            setIsAnalyzing(false);
+            setStatusText("");
+          }
+        }, 60000);
+
+        while (attempt < 2) {
+          const timeoutId = startTimeoutGuard();
+          try {
+            setStatusText(attempt === 0 ? "AI 正在深度分析 (Qwen-VL-Max)..." : "稳定通道重试中...");
+            fullResponse = "";
+            hasReceivedFirstToken = false;
+            await aliyunService.chatVLStream(messages, (chunk) => {
+              if (!hasReceivedFirstToken) {
+                hasReceivedFirstToken = true;
+                clearTimeout(timeoutId);
+                setStatusText("正在生成分析报告...");
+              }
+              fullResponse += chunk;
+              setAnalysisText(prev => prev + chunk);
+            });
+
+            clearTimeout(timeoutId);
+
+            if (!fullResponse && !errorMsg) {
+              if (analysisText) fullResponse = analysisText;
+              else throw new Error("API 返回内容为空，请重试。");
+            }
+
+            return fullResponse;
+          } catch (innerErr) {
+            clearTimeout(timeoutId);
+            console.error(`Stream attempt ${attempt + 1} failed`, innerErr);
+            if (attempt === 0) {
+              setStatusText("检测到不稳定，正在更换通道重试...");
+              setAnalysisText('');
+              await new Promise((r) => setTimeout(r, 800));
+            } else {
+              throw innerErr;
+            }
+          }
+          attempt += 1;
         }
-      }, 60000);
+        return fullResponse;
+      };
 
-      await aliyunService.chatVLStream(messages, (chunk) => {
-        if (!hasReceivedFirstToken) {
-           hasReceivedFirstToken = true;
-           clearTimeout(timeoutId);
-           setStatusText("正在生成分析报告...");
-        }
-        fullResponse += chunk;
-        setAnalysisText(prev => prev + chunk);
-      });
-      
-      clearTimeout(timeoutId);
-
-      if (!fullResponse && !errorMsg) {
-         if (analysisText) fullResponse = analysisText; 
-         else throw new Error("API 返回内容为空，请重试。");
-      }
-
+      const finalText = await runStreamWithRetry();
       setStatusText("");
-      speakText(fullResponse);
+      speakText(finalText);
 
     } catch (error: any) {
-      if (error.name === 'AbortError') return; 
+      if (error.name === 'AbortError') return;
       console.error("Analysis Error:", error);
-      
+
       let msg = error.message;
       if (msg.includes('Failed to fetch') || msg.includes('Load failed')) {
         msg = "网络请求失败，可能是服务器繁忙或网络不通。";
@@ -524,15 +549,15 @@ const AIRecon: React.FC<AIReconProps> = ({ onBack }) => {
       ) : (
           // MOBILE: Bottom Sheet
           <div className={`
-             absolute z-50 bottom-0 inset-x-0 
-             bg-[#0F1629]/95 backdrop-blur-2xl 
+             absolute z-50 bottom-0 inset-x-0
+             bg-[#0F1629]/95 backdrop-blur-2xl
              border-t border-white/10 rounded-t-[32px]
              shadow-[0_-10px_40px_rgba(0,0,0,0.5)]
              transition-all duration-500 cubic-bezier(0.32, 0.72, 0, 1)
              flex flex-col
-             ${isResultExpanded ? 'h-[85%]' : 'h-[0px] overflow-hidden border-none'}
+             ${isResultExpanded ? 'h-[85%]' : 'h-[96px]'}
           `}>
-             <div 
+             <div
                 onClick={() => setIsResultExpanded(!isResultExpanded)}
                 className="w-full h-[60px] flex items-center justify-between px-6 border-b border-white/5 cursor-pointer active:bg-white/5 shrink-0"
              >
