@@ -379,7 +379,9 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
                   <div className="flex items-center gap-2">
                     <div className={`w-2 h-2 rounded-full ${isListening ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}`} />
                     <span className="font-medium text-white/70">
-                      {isListening ? '监听中：说“小朗小朗”（可识别成“小浪小浪”）' : '点击麦克风开启监听（需要权限）'}
+                      {isListening
+                        ? '监听中：说“小朗小朗”（可识别成“小浪小浪”）'
+                        : '点击麦克风开启监听（需要权限）'}
                     </span>
                   </div>
                   <span className="flex items-center gap-1 text-[10px] px-2 py-1 rounded-full bg-yellow-500/10 border border-yellow-500/30 text-yellow-200">
