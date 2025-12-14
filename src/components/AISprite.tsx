@@ -165,9 +165,11 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     if (!('webkitSpeechRecognition' in window)) return null;
     const SpeechRecognition = (window as any).webkitSpeechRecognition;
     const recognition = new SpeechRecognition();
+
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = 'zh-CN';
+    recognition.maxAlternatives = 1;
 
     recognition.onstart = () => {
       setIsListening(true);
@@ -295,7 +297,6 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       console.warn('语音启动失败', err);
       showFeedback('语音启动失败，请确认麦克风权限');
     }
-  };
 
   const stopListening = () => {
     shouldResumeRef.current = false;
