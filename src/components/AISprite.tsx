@@ -11,6 +11,10 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
   const [capturedSpeech, setCapturedSpeech] = useState('');
   const [inputText, setInputText] = useState('');
   const [feedback, setFeedback] = useState('');
+  const [voiceState, setVoiceState] = useState<'idle' | 'listening' | 'awake' | 'executing'>('idle');
+  const [isMobileView, setIsMobileView] = useState(
+    typeof window !== 'undefined' ? window.innerWidth < 768 : false
+  );
   const [isWakeWordDetected, setIsWakeWordDetected] = useState(false);
 
   const recognitionRef = useRef<any>(null);
@@ -38,6 +42,9 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
 
   const showFeedback = (text: string) => {
     setFeedback(text);
+    if (text.includes('请说出指令')) setVoiceState('awake');
+    else if (text.includes('正在')) setVoiceState('executing');
+    else if (text.toLowerCase().includes('监听')) setVoiceState('listening');
     if (feedbackTimeoutRef.current) window.clearTimeout(feedbackTimeoutRef.current);
     feedbackTimeoutRef.current = window.setTimeout(() => setFeedback(''), 3500);
   };
@@ -51,13 +58,16 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
 
   const detectWakeWord = (text: string) => {
     const t = (text || '').replace(/\s+/g, '');
-    return doubleWakeTest.test(t) || pinyinDoubleWakeTest.test(t);
+    const maybeSingleWake = /小[朗浪狼郎廊]/.test(t) || /xiao\s*lang/i.test(text);
+    return doubleWakeTest.test(t) || pinyinDoubleWakeTest.test(t) || (isMobileView && maybeSingleWake);
   };
 
   const stripWakeWord = (text: string) =>
     normalize(text)
       .replace(/小[朗浪狼郎廊]\s*小[朗浪狼郎廊]/g, ' ')
+      .replace(/小[朗浪狼郎廊]/g, ' ')
       .replace(/xiao\s*lang\s*xiao\s*lang|xiaolang\s*xiaolang/gi, ' ')
+      .replace(/xiao\s*lang|xiaolang/gi, ' ')
       .replace(/\s+/g, ' ')
       .trim();
 
@@ -85,32 +95,36 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       return;
     }
 
+    const acknowledge = (phrase?: string) => {
+      const msg = phrase || '我在，正在执行';
+      showFeedback(msg);
+      speak(msg);
+      setVoiceState('executing');
+    };
+
     if (
       (cmd.includes('分析') || cmd.includes('统计') || cmd.includes('比例') || cmd.includes('学历')) &&
       (cmd.includes('员工') || cmd.includes('工具') || cmd.includes('平台') || cmd.includes('中心'))
     ) {
-      speak('好的，正在生成数据分析报告');
-      showFeedback('正在生成报告...');
+      acknowledge('好的，正在生成数据分析报告');
       onNavigate('tools', { mode: 'analysis', query: cmd });
       return;
     }
 
     if (cmd.includes('知识库')) {
-      speak('正在打开知识库');
-      showFeedback('正在打开知识库...');
+      acknowledge('正在打开知识库');
       onNavigate('knowledge');
       return;
     }
 
     if (cmd.includes('识图') || cmd.includes('视觉')) {
-      speak('正在启动视觉分析');
-      showFeedback('正在打开 AI 识图...');
+      acknowledge('正在启动视觉分析');
       onNavigate('vision');
       return;
     }
 
     if (cmd.includes('主页') || cmd.includes('返回')) {
-      speak('正在返回主页');
+      acknowledge('正在返回主页');
       onNavigate('dashboard');
       return;
     }
@@ -174,12 +188,23 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = 'zh-CN';
-    recognition.maxAlternatives = 1;
+    recognition.maxAlternatives = 3;
 
     recognition.onstart = () => {
       setIsListening(true);
       isListeningRef.current = true;
       shouldResumeRef.current = true;
+      setVoiceState('listening');
+      showFeedback('监听中：请说“小朗小朗”');
+    };
+
+    recognition.onaudiostart = () => {
+      setVoiceState('listening');
+      if (!feedback) showFeedback('已开启麦克风，等待唤醒');
+    };
+
+    recognition.onspeechstart = () => {
+      setVoiceState('awake');
     };
 
     recognition.onend = () => {
@@ -264,6 +289,8 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
   useEffect(() => {
     synthRef.current = typeof window !== 'undefined' ? window.speechSynthesis : null;
     buildRecognizer();
+    const handleResize = () => setIsMobileView(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
 
     return () => {
       try {
@@ -274,6 +301,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       if (restartTimerRef.current) window.clearTimeout(restartTimerRef.current);
       if (feedbackTimeoutRef.current) window.clearTimeout(feedbackTimeoutRef.current);
       if (wakeTimerRef.current) window.clearTimeout(wakeTimerRef.current);
+      window.removeEventListener('resize', handleResize);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -316,6 +344,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     }
     setIsListening(false);
     isListeningRef.current = false;
+    setVoiceState('idle');
     showFeedback('语音已关闭');
   };
 
@@ -337,7 +366,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     if (!feedback && !(isListening && !isOpen)) return null;
     const danger = feedback.includes('不安全') || feedback.includes('HTTPS');
 
-    return (
+    const baseBubble = (
       <div className="pointer-events-auto mr-2 animate-in slide-in-from-bottom-2 fade-in duration-300">
         <div
           className={`backdrop-blur-xl border text-sm px-4 py-2 rounded-2xl rounded-tr-none shadow-lg max-w-[260px] ${
@@ -345,6 +374,41 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
           }`}
         >
           {feedback || (isListening ? 'Listening...' : '')}
+        </div>
+      </div>
+    );
+
+    if (!isMobileView) return baseBubble;
+
+    return (
+      <div className="pointer-events-none w-full px-4 animate-in slide-in-from-bottom-2 fade-in duration-300">
+        <div
+          className={`w-full rounded-2xl border shadow-lg px-4 py-3 backdrop-blur-xl ${
+            danger
+              ? 'bg-red-500/10 border-red-500/30 text-red-100'
+              : 'bg-slate-900/80 border-white/15 text-white'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium">
+              {feedback || (isListening ? '麦克风监听中...' : '待命中')}
+            </span>
+            <span
+              className={`w-2 h-2 rounded-full ${
+                voiceState === 'executing'
+                  ? 'bg-emerald-400 animate-ping'
+                  : voiceState === 'awake'
+                  ? 'bg-blue-300 animate-pulse'
+                  : 'bg-yellow-300'
+              }`}
+            />
+          </div>
+          {capturedSpeech && (
+            <p className="text-[11px] text-slate-300 mt-1 line-clamp-2">
+              <span className="text-slate-500">识别：</span>
+              {capturedSpeech}
+            </p>
+          )}
         </div>
       </div>
     );
