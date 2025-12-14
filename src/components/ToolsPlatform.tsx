@@ -661,6 +661,7 @@ Return JSON Format:
   const openEditor = (emp: Employee) => {
     setCurrentEmp({ ...emp });
     setIsEditorOpen(true);
+    setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 0);
   };
 
   const sqlEscape = (v: any) => String(v ?? '').replace(/'/g, "''");
@@ -1004,72 +1005,109 @@ Return JSON Format:
         </table>
       </div>
 
-      {/* 2b. Card List (Mobile) */}
-      <div className="md:hidden px-3 pb-6 space-y-3">
-        {loading && employees.length === 0 ? (
-          <div className="p-6 rounded-2xl bg-white/5 border border-white/10 text-center text-slate-400">
-            <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" /> 数据同步中...
+      {/* 2b. Compact table (Mobile) */}
+      <div className="md:hidden px-3 pb-6">
+        <div className="rounded-2xl border border-white/10 bg-white/[0.02] shadow-inner overflow-hidden">
+          <div className="px-4 py-3 text-xs font-semibold text-slate-300 border-b border-white/5 bg-white/[0.03] uppercase tracking-wide">
+            员工列表（轻触行即可编辑）
           </div>
-        ) : filteredData.length === 0 ? (
-          <div className="p-6 rounded-2xl bg-white/5 border border-white/10 text-center text-slate-400">未找到相关数据</div>
-        ) : (
-          filteredData.map((row) => {
-            const isPhoneVisible = visiblePhones.has(row.P_emp_no);
-            const maskedPhone = row.p_emp_phone
-              ? row.p_emp_phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2')
-              : '-';
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[620px] text-left text-[13px]">
+              <thead className="bg-[#0F1629] text-slate-400 text-[11px] border-b border-white/10">
+                <tr>
+                  <th className="px-4 py-3">姓名</th>
+                  <th className="px-4 py-3">工号</th>
+                  <th className="px-4 py-3">部门</th>
+                  <th className="px-4 py-3">状态</th>
+                  <th className="px-4 py-3">电话</th>
+                  <th className="px-4 py-3">入职</th>
+                  <th className="px-4 py-3 text-right">操作</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {loading && employees.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-12 text-center text-slate-500">
+                      <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> 数据同步中...
+                    </td>
+                  </tr>
+                ) : filteredData.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
+                      未找到相关数据
+                    </td>
+                  </tr>
+                ) : (
+                  filteredData.map((row) => {
+                    const isPhoneVisible = visiblePhones.has(row.P_emp_no);
+                    const maskedPhone = row.p_emp_phone
+                      ? row.p_emp_phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2')
+                      : '-';
 
-            return (
-              <button
-                key={row.P_emp_no}
-                onClick={() => openEditor(row)}
-                className="w-full text-left p-4 rounded-2xl bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10 backdrop-blur-xl shadow-[0_12px_40px_-25px_rgba(0,0,0,0.8)] active:scale-[0.99] transition-transform"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-2xl bg-slate-900 border border-white/10 overflow-hidden flex items-center justify-center text-sm font-bold text-slate-400">
-                      {row.webbmp ? <img src={row.webbmp} className="w-full h-full object-cover" /> : row.employeename?.[0] || 'U'}
-                    </div>
-                    <div>
-                      <div className="text-base font-semibold text-white">{row.employeename}</div>
-                      <div className="text-[11px] text-slate-400">{getDeptName(row.Departmentid)}</div>
-                    </div>
-                  </div>
-                  <span className={`px-2 py-1 rounded-lg text-[11px] border ${getStatusColor(row.P_emp_Status)}`}>{row.P_emp_Status}</span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3 text-xs text-slate-300 mt-3">
-                  <div className="flex items-center gap-2 bg-white/5 px-3 py-2 rounded-xl border border-white/10">
-                    <span className="text-slate-500">工号</span>
-                    <span className="font-mono text-[12px] text-white">{row.P_emp_no}</span>
-                  </div>
-                  <div className="flex items-center gap-2 bg-white/5 px-3 py-2 rounded-xl border border-white/10">
-                    <span className="text-slate-500">电话</span>
-                    <span className="font-mono text-[12px] text-white">{isPhoneVisible ? row.p_emp_phone : maskedPhone}</span>
-                  </div>
-                  <div className="flex items-center gap-2 bg-white/5 px-3 py-2 rounded-xl border border-white/10">
-                    <span className="text-slate-500">入职</span>
-                    <span className="text-white">{row.P_emp_workJoindt ? String(row.P_emp_workJoindt).split('T')[0] : '-'}</span>
-                  </div>
-                  <div className="flex items-center gap-2 bg-white/5 px-3 py-2 rounded-xl border border-white/10">
-                    <span className="text-slate-500">学历</span>
-                    <span className="text-white">{row.p_emp_degree || '未记录'}</span>
-                  </div>
-                </div>
-
-                <div className="mt-3 text-[11px] text-indigo-200 flex items-center gap-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse"></span>
-                  轻触打开详情，支持直接编辑
-                </div>
-              </button>
-            );
-          })
-        )}
+                    return (
+                      <tr
+                        key={row.P_emp_no}
+                        onClick={() => openEditor(row)}
+                        className="active:bg-white/[0.04] hover:bg-white/[0.03] transition-colors"
+                      >
+                        <td className="px-4 py-3 text-white font-medium">
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-full bg-slate-800 border border-white/10 overflow-hidden flex items-center justify-center text-xs font-bold text-slate-400">
+                              {row.webbmp ? <img src={row.webbmp} className="w-full h-full object-cover" /> : row.employeename?.[0] || 'U'}
+                            </div>
+                            <span>{row.employeename}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-slate-300 font-mono text-[12px]">{row.P_emp_no}</td>
+                        <td className="px-4 py-3 text-slate-300">{getDeptName(row.Departmentid)}</td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] border ${getStatusColor(row.P_emp_Status)}`}>
+                            {row.P_emp_Status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-slate-300 font-mono text-[12px]">
+                          <div className="flex items-center gap-2">
+                            {isPhoneVisible ? row.p_emp_phone : maskedPhone}
+                            {row.p_emp_phone && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  togglePhoneVisibility(row.P_emp_no);
+                                }}
+                                className="p-1 text-slate-500 hover:text-white"
+                              >
+                                {isPhoneVisible ? <EyeOff size={12} /> : <Eye size={12} />}
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-slate-300 text-[12px]">
+                          {row.P_emp_workJoindt ? String(row.P_emp_workJoindt).split('T')[0] : '-'}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openEditor(row);
+                            }}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-indigo-200 text-[11px]"
+                          >
+                            <Edit2 size={14} /> 编辑
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
       {/* 3. Editor Modal */}
       {isEditorOpen && currentEmp && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] flex items-start md:items-center justify-center p-3 sm:p-4">
           <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm" onClick={() => setIsEditorOpen(false)} />
           <div className="relative w-full max-w-lg md:max-w-2xl bg-[#0F1629] border border-white/10 rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 h-[90vh] md:h-auto flex flex-col">
             <div className="px-6 py-4 border-b border-white/5 bg-white/[0.02] flex items-center justify-between">

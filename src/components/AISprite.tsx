@@ -1,15 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, BarChart3, Bot, Mic, MicOff, Send, Sparkles, X, Zap } from 'lucide-react';
+import { Bot, Mic, MicOff, Zap } from 'lucide-react';
 
 interface AISpriteProps {
   onNavigate: (view: string, params?: any) => void;
 }
 
 const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
-  const [isOpen, setIsOpen] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [capturedSpeech, setCapturedSpeech] = useState('');
-  const [inputText, setInputText] = useState('');
   const [feedback, setFeedback] = useState('');
   const [voiceState, setVoiceState] = useState<'idle' | 'listening' | 'awake' | 'executing'>('idle');
   const [isMobileView, setIsMobileView] = useState(
@@ -367,21 +365,14 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
   };
 
   // ✅ 这里是你之前缺失的 “}” 的地方（现在已正确闭合）
-  const toggleListening = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const toggleListening = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
     if (isListening) stopListening();
     else startListening();
   };
 
-  const handleManualSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inputText.trim()) return;
-    executeCommand(inputText);
-    setInputText('');
-  };
-
   const FeedbackBubble = () => {
-    if (!feedback && !isOpen) return null;
+    if (!feedback && !isListening) return null;
     const danger = feedback.includes('不安全') || feedback.includes('HTTPS');
 
     const baseBubble = (
@@ -432,105 +423,6 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     );
   };
 
-  const OpenPanel = () => {
-    if (!isOpen) return null;
-
-    return (
-      <div className="pointer-events-auto mb-2 mr-0 animate-in zoom-in-95 slide-in-from-bottom-4 duration-300 origin-bottom-right">
-        <div className="w-[280px] bg-[#0F1629]/90 backdrop-blur-xl border border-white/10 rounded-2xl shadow-[0_0_50px_rgba(0,0,0,0.5)] overflow-hidden">
-          <div className="p-3 border-b border-white/5 bg-white/5 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Sparkles size={14} className="text-blue-400" />
-              <span className="text-xs font-bold text-white">AI 助手指令</span>
-            </div>
-            <button onClick={() => setIsOpen(false)} className="text-slate-400 hover:text-white">
-              <X size={14} />
-            </button>
-          </div>
-
-          <div className="p-3 space-y-3">
-            <form onSubmit={handleManualSubmit} className="relative">
-              <input
-                autoFocus
-                type="text"
-                value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
-                placeholder="输入指令 (如: 分析本科生占比)..."
-                className="w-full bg-black/40 border border-white/10 rounded-xl pl-3 pr-9 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500/50"
-              />
-              <button type="submit" className="absolute right-2 top-1/2 -translate-y-1/2 text-blue-400 hover:text-blue-300">
-                <Send size={14} />
-              </button>
-            </form>
-
-            <div className="flex flex-col gap-1 text-[10px] text-slate-400 bg-white/5 border border-white/5 rounded-xl px-3 py-2">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <div className={`w-2 h-2 rounded-full ${isListening ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}`} />
-                  <span className="font-medium text-white/70">
-                    {isListening
-                      ? '监听中：说“小朗小朗”（可识别成“小浪小浪”）'
-                      : '点击麦克风开启监听（需要权限）'}
-                  </span>
-                </div>
-                <span className="flex items-center gap-1 text-[10px] px-2 py-1 rounded-full bg-yellow-500/10 border border-yellow-500/30 text-yellow-200">
-                  <AlertTriangle size={10} /> 浏览器识别
-                </span>
-              </div>
-
-              {capturedSpeech && (
-                <div className="text-[10px] text-slate-300/80 break-words">
-                  <span className="text-slate-500">识别：</span>
-                  {capturedSpeech}
-                </div>
-              )}
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => {
-                  onNavigate('tools', { mode: 'analysis', query: '分析一下现在的学历分布情况' });
-                  speak('正在为您分析学历数据');
-                }}
-                className="text-[10px] bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/30 rounded-lg py-2 text-indigo-200 transition-colors flex items-center justify-center gap-1"
-              >
-                <BarChart3 size={12} /> 分析学历分布
-              </button>
-              <button
-                onClick={() => onNavigate('vision')}
-                className="text-[10px] bg-white/5 hover:bg-white/10 border border-white/5 rounded-lg py-2 text-slate-300 transition-colors"
-              >
-                打开识图
-              </button>
-              <button
-                onClick={() => onNavigate('knowledge')}
-                className="text-[10px] bg-white/5 hover:bg-white/10 border border-white/5 rounded-lg py-2 text-slate-300 transition-colors"
-              >
-                知识库
-              </button>
-              <button
-                onClick={() => onNavigate('dashboard')}
-                className="text-[10px] bg-white/5 hover:bg-white/10 border border-white/5 rounded-lg py-2 text-slate-300 transition-colors"
-              >
-                回主页
-              </button>
-            </div>
-          </div>
-
-          <div
-            onClick={toggleListening}
-            className={`p-2 border-t border-white/5 flex items-center justify-center gap-2 cursor-pointer transition-colors ${
-              isListening ? 'bg-blue-500/20 text-blue-300' : 'hover:bg-white/5 text-slate-400'
-            }`}
-          >
-            {isListening ? <Mic size={14} className="animate-pulse" /> : <MicOff size={14} />}
-            <span className="text-[10px] font-medium">{isListening ? '点击停止 / 识别' : '点击开始监听'}</span>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     const pointer = event;
     dragStateRef.current = {
@@ -554,7 +446,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     };
 
     const handlePointerUp = () => {
-      if (!dragStateRef.current.moved) setIsOpen((v) => !v);
+      if (!dragStateRef.current.moved) toggleListening();
       dragStateRef.current.dragging = false;
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
@@ -583,7 +475,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
           bg-gradient-to-br from-slate-800 to-black border border-white/20
           shadow-[0_0_20px_rgba(0,0,0,0.5)] backdrop-blur-md
           transition-transform duration-300 active:scale-95
-          ${isOpen ? 'scale-90 ring-2 ring-blue-500/50' : 'hover:-translate-y-1'}
+          ${isListening ? 'scale-90 ring-2 ring-blue-500/50' : 'hover:-translate-y-1'}
         `}
       >
         {isWakeWordDetected ? (
@@ -607,14 +499,26 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     </div>
   );
 
+  useEffect(() => {
+    setPosition((pos) => ({
+      x: Math.min(window.innerWidth - 72, Math.max(8, pos.x)),
+      y: Math.min(window.innerHeight - 72, Math.max(16, pos.y)),
+    }));
+  }, [isMobileView]);
+
   return (
     <div
-      className="fixed z-[9999] flex flex-col items-end gap-3 pointer-events-auto"
+      className="fixed z-[9999] pointer-events-none"
       style={{ left: position.x, top: position.y }}
     >
-      <FeedbackBubble />
-      <OpenPanel />
-      <TriggerOrb />
+      <div className="relative flex flex-col items-end pointer-events-none">
+        <div className="absolute bottom-[74px] right-0 flex flex-col items-end gap-2 pointer-events-none">
+          <FeedbackBubble />
+        </div>
+        <div className="pointer-events-auto">
+          <TriggerOrb />
+        </div>
+      </div>
     </div>
   );
 };
