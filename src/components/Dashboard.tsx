@@ -158,29 +158,30 @@ const Dashboard: React.FC<DashboardProps> = ({ user, profile, announcements, onP
         </div>
       )}
 
-      {/* Mobile Quick Shortcuts */}
-      <div className="md:hidden grid grid-cols-3 gap-3 mb-4">
-        <button
-          onClick={() => onNavigate('knowledge')}
-          className="flex flex-col items-center gap-1 rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-xs font-medium text-white active:scale-[0.99] transition-all"
-        >
-          <GraduationCap className="w-4 h-4 text-emerald-300" />
-          知识库
-        </button>
-        <button
-          onClick={() => onNavigate('tools')}
-          className="flex flex-col items-center gap-1 rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-xs font-medium text-white active:scale-[0.99] transition-all"
-        >
-          <Cpu className="w-4 h-4 text-blue-300" />
-          AI工具
-        </button>
-        <button
-          onClick={() => onNavigate('vision')}
-          className="flex flex-col items-center gap-1 rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-xs font-medium text-white active:scale-[0.99] transition-all"
-        >
-          <Camera className="w-4 h-4 text-purple-300" />
-          视觉
-        </button>
+      {/* Mobile Quick Shortcuts - compress into icon chips */}
+      <div className="md:hidden grid grid-cols-2 gap-3 mb-5">
+        {modules.map((module) => (
+          <button
+            key={module.id}
+            onClick={() => handleModuleClick(module)}
+            className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-2.5 text-left active:scale-[0.99] transition-all shadow-[0_8px_30px_-24px_rgba(59,130,246,0.6)]"
+          >
+            <span
+              className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border border-white/10 shadow-inner backdrop-blur-sm
+                ${module.key === 'knowledge'
+                  ? 'bg-emerald-500/15 text-emerald-200'
+                  : module.key === 'tools'
+                    ? 'bg-blue-500/15 text-blue-200'
+                    : 'bg-purple-500/15 text-purple-200'}`}
+            >
+              {getIcon(module.icon)}
+            </span>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold text-white truncate">{module.title}</div>
+              <div className="text-[11px] text-slate-400 truncate">{module.description}</div>
+            </div>
+          </button>
+        ))}
       </div>
 
       {/* 3. Main Grid Layout */}
@@ -195,7 +196,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, profile, announcements, onP
              </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+          <div className="hidden md:grid grid-cols-1 sm:grid-cols-2 gap-5">
             {loading ? (
               <>
                 <div className="h-48 rounded-3xl bg-white/5 animate-pulse border border-white/5" />

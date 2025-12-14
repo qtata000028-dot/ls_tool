@@ -173,6 +173,7 @@ const ToolsPlatform: React.FC<ToolsPlatformProps> = ({ onBack, aiParams }) => {
   const [aiReportConfig, setAiReportConfig] = useState<AIReport | null>(null);
   const [followQuery, setFollowQuery] = useState('');
 
+
   // Recruitment Trend Data (Calculated)
   const [recruitmentTrend, setRecruitmentTrend] = useState<{ year: string; count: number }[]>([]);
 
@@ -887,8 +888,8 @@ Return JSON Format:
         </div>
       </div>
 
-      {/* 2. Table */}
-      <div className="flex-1 overflow-auto custom-scrollbar relative z-10">
+      {/* 2. Table (Desktop) */}
+      <div className="hidden md:block flex-1 overflow-auto custom-scrollbar relative z-10">
         <table className="w-full text-left border-separate border-spacing-0">
           <thead className="sticky top-0 z-20 bg-gradient-to-r from-[#0F1629] via-[#0F1629]/95 to-[#0F1629] text-xs font-bold text-slate-400 uppercase tracking-wider shadow-[0_10px_30px_-20px_rgba(0,0,0,0.8)] backdrop-blur">
             <tr>
@@ -1003,11 +1004,74 @@ Return JSON Format:
         </table>
       </div>
 
+      {/* 2b. Card List (Mobile) */}
+      <div className="md:hidden px-3 pb-6 space-y-3">
+        {loading && employees.length === 0 ? (
+          <div className="p-6 rounded-2xl bg-white/5 border border-white/10 text-center text-slate-400">
+            <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" /> 数据同步中...
+          </div>
+        ) : filteredData.length === 0 ? (
+          <div className="p-6 rounded-2xl bg-white/5 border border-white/10 text-center text-slate-400">未找到相关数据</div>
+        ) : (
+          filteredData.map((row) => {
+            const isPhoneVisible = visiblePhones.has(row.P_emp_no);
+            const maskedPhone = row.p_emp_phone
+              ? row.p_emp_phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2')
+              : '-';
+
+            return (
+              <button
+                key={row.P_emp_no}
+                onClick={() => openEditor(row)}
+                className="w-full text-left p-4 rounded-2xl bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10 backdrop-blur-xl shadow-[0_12px_40px_-25px_rgba(0,0,0,0.8)] active:scale-[0.99] transition-transform"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-slate-900 border border-white/10 overflow-hidden flex items-center justify-center text-sm font-bold text-slate-400">
+                      {row.webbmp ? <img src={row.webbmp} className="w-full h-full object-cover" /> : row.employeename?.[0] || 'U'}
+                    </div>
+                    <div>
+                      <div className="text-base font-semibold text-white">{row.employeename}</div>
+                      <div className="text-[11px] text-slate-400">{getDeptName(row.Departmentid)}</div>
+                    </div>
+                  </div>
+                  <span className={`px-2 py-1 rounded-lg text-[11px] border ${getStatusColor(row.P_emp_Status)}`}>{row.P_emp_Status}</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 text-xs text-slate-300 mt-3">
+                  <div className="flex items-center gap-2 bg-white/5 px-3 py-2 rounded-xl border border-white/10">
+                    <span className="text-slate-500">工号</span>
+                    <span className="font-mono text-[12px] text-white">{row.P_emp_no}</span>
+                  </div>
+                  <div className="flex items-center gap-2 bg-white/5 px-3 py-2 rounded-xl border border-white/10">
+                    <span className="text-slate-500">电话</span>
+                    <span className="font-mono text-[12px] text-white">{isPhoneVisible ? row.p_emp_phone : maskedPhone}</span>
+                  </div>
+                  <div className="flex items-center gap-2 bg-white/5 px-3 py-2 rounded-xl border border-white/10">
+                    <span className="text-slate-500">入职</span>
+                    <span className="text-white">{row.P_emp_workJoindt ? String(row.P_emp_workJoindt).split('T')[0] : '-'}</span>
+                  </div>
+                  <div className="flex items-center gap-2 bg-white/5 px-3 py-2 rounded-xl border border-white/10">
+                    <span className="text-slate-500">学历</span>
+                    <span className="text-white">{row.p_emp_degree || '未记录'}</span>
+                  </div>
+                </div>
+
+                <div className="mt-3 text-[11px] text-indigo-200 flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse"></span>
+                  轻触打开详情，支持直接编辑
+                </div>
+              </button>
+            );
+          })
+        )}
+      </div>
+
       {/* 3. Editor Modal */}
       {isEditorOpen && currentEmp && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm" onClick={() => setIsEditorOpen(false)} />
-          <div className="relative w-full max-w-2xl bg-[#0F1629] border border-white/10 rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95">
+          <div className="relative w-full max-w-lg md:max-w-2xl bg-[#0F1629] border border-white/10 rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 h-[90vh] md:h-auto flex flex-col">
             <div className="px-6 py-4 border-b border-white/5 bg-white/[0.02] flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-slate-800 border border-white/10 overflow-hidden flex items-center justify-center">
@@ -1030,7 +1094,7 @@ Return JSON Format:
               </button>
             </div>
 
-            <div className="p-6 grid grid-cols-2 gap-x-6 gap-y-5">
+            <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5 overflow-y-auto flex-1">
               <div className="col-span-1 space-y-1.5">
                 <label className="text-xs font-medium text-slate-400">姓名</label>
                 <input
@@ -1774,6 +1838,7 @@ Return JSON Format:
       )}
     </div>
   );
+
 };
 
 export default ToolsPlatform;
