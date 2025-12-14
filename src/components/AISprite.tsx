@@ -1,16 +1,30 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, BarChart3, Bot, Mic, MicOff, Send, Sparkles, X, Zap } from 'lucide-react';
+import { Bot, Mic, MicOff, Zap } from 'lucide-react';
 
 interface AISpriteProps {
   onNavigate: (view: string, params?: any) => void;
 }
 
 const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
-  const [isOpen, setIsOpen] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [capturedSpeech, setCapturedSpeech] = useState('');
-  const [inputText, setInputText] = useState('');
   const [feedback, setFeedback] = useState('');
+  const [voiceState, setVoiceState] = useState<'idle' | 'listening' | 'awake' | 'executing'>('idle');
+  const [isMobileView, setIsMobileView] = useState(
+    typeof window !== 'undefined' ? window.innerWidth < 768 : false
+  );
+  const [position, setPosition] = useState(() => {
+    if (typeof window === 'undefined') return { x: 16, y: 16 };
+    return { x: window.innerWidth - 96, y: window.innerHeight - 120 };
+  });
+  const dragStateRef = useRef({
+    dragging: false,
+    moved: false,
+    startX: 0,
+    startY: 0,
+    originX: 0,
+    originY: 0,
+  });
   const [isWakeWordDetected, setIsWakeWordDetected] = useState(false);
 
   const recognitionRef = useRef<any>(null);
@@ -38,6 +52,9 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
 
   const showFeedback = (text: string) => {
     setFeedback(text);
+    if (text.includes('请说出指令')) setVoiceState('awake');
+    else if (text.includes('正在')) setVoiceState('executing');
+    else if (text.toLowerCase().includes('监听')) setVoiceState('listening');
     if (feedbackTimeoutRef.current) window.clearTimeout(feedbackTimeoutRef.current);
     feedbackTimeoutRef.current = window.setTimeout(() => setFeedback(''), 3500);
   };
@@ -51,13 +68,16 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
 
   const detectWakeWord = (text: string) => {
     const t = (text || '').replace(/\s+/g, '');
-    return doubleWakeTest.test(t) || pinyinDoubleWakeTest.test(t);
+    const maybeSingleWake = /小[朗浪狼郎廊]/.test(t) || /xiao\s*lang/i.test(text);
+    return doubleWakeTest.test(t) || pinyinDoubleWakeTest.test(t) || (isMobileView && maybeSingleWake);
   };
 
   const stripWakeWord = (text: string) =>
     normalize(text)
       .replace(/小[朗浪狼郎廊]\s*小[朗浪狼郎廊]/g, ' ')
+      .replace(/小[朗浪狼郎廊]/g, ' ')
       .replace(/xiao\s*lang\s*xiao\s*lang|xiaolang\s*xiaolang/gi, ' ')
+      .replace(/xiao\s*lang|xiaolang/gi, ' ')
       .replace(/\s+/g, ' ')
       .trim();
 
@@ -85,32 +105,36 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       return;
     }
 
+    const acknowledge = (phrase?: string) => {
+      const msg = phrase || '我在，正在执行';
+      showFeedback(msg);
+      speak(msg);
+      setVoiceState('executing');
+    };
+
     if (
       (cmd.includes('分析') || cmd.includes('统计') || cmd.includes('比例') || cmd.includes('学历')) &&
       (cmd.includes('员工') || cmd.includes('工具') || cmd.includes('平台') || cmd.includes('中心'))
     ) {
-      speak('好的，正在生成数据分析报告');
-      showFeedback('正在生成报告...');
+      acknowledge('好的，正在生成数据分析报告');
       onNavigate('tools', { mode: 'analysis', query: cmd });
       return;
     }
 
     if (cmd.includes('知识库')) {
-      speak('正在打开知识库');
-      showFeedback('正在打开知识库...');
+      acknowledge('正在打开知识库');
       onNavigate('knowledge');
       return;
     }
 
     if (cmd.includes('识图') || cmd.includes('视觉')) {
-      speak('正在启动视觉分析');
-      showFeedback('正在打开 AI 识图...');
+      acknowledge('正在启动视觉分析');
       onNavigate('vision');
       return;
     }
 
     if (cmd.includes('主页') || cmd.includes('返回')) {
-      speak('正在返回主页');
+      acknowledge('正在返回主页');
       onNavigate('dashboard');
       return;
     }
@@ -174,12 +198,23 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = 'zh-CN';
-    recognition.maxAlternatives = 1;
+    recognition.maxAlternatives = 3;
 
     recognition.onstart = () => {
       setIsListening(true);
       isListeningRef.current = true;
       shouldResumeRef.current = true;
+      setVoiceState('listening');
+      showFeedback('监听中：请说“小朗小朗”');
+    };
+
+    recognition.onaudiostart = () => {
+      setVoiceState('listening');
+      if (!feedback) showFeedback('已开启麦克风，等待唤醒');
+    };
+
+    recognition.onspeechstart = () => {
+      setVoiceState('awake');
     };
 
     recognition.onend = () => {
@@ -264,6 +299,14 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
   useEffect(() => {
     synthRef.current = typeof window !== 'undefined' ? window.speechSynthesis : null;
     buildRecognizer();
+    const handleResize = () => {
+      setIsMobileView(window.innerWidth < 768);
+      setPosition((pos) => ({
+        x: Math.min(window.innerWidth - 72, Math.max(8, pos.x)),
+        y: Math.min(window.innerHeight - 72, Math.max(8, pos.y)),
+      }));
+    };
+    window.addEventListener('resize', handleResize);
 
     return () => {
       try {
@@ -274,6 +317,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       if (restartTimerRef.current) window.clearTimeout(restartTimerRef.current);
       if (feedbackTimeoutRef.current) window.clearTimeout(feedbackTimeoutRef.current);
       if (wakeTimerRef.current) window.clearTimeout(wakeTimerRef.current);
+      window.removeEventListener('resize', handleResize);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -316,28 +360,22 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     }
     setIsListening(false);
     isListeningRef.current = false;
+    setVoiceState('idle');
     showFeedback('语音已关闭');
   };
 
   // ✅ 这里是你之前缺失的 “}” 的地方（现在已正确闭合）
-  const toggleListening = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const toggleListening = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
     if (isListening) stopListening();
     else startListening();
   };
 
-  const handleManualSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inputText.trim()) return;
-    executeCommand(inputText);
-    setInputText('');
-  };
-
   const FeedbackBubble = () => {
-    if (!feedback && !(isListening && !isOpen)) return null;
+    if (!feedback && !isListening) return null;
     const danger = feedback.includes('不安全') || feedback.includes('HTTPS');
 
-    return (
+    const baseBubble = (
       <div className="pointer-events-auto mr-2 animate-in slide-in-from-bottom-2 fade-in duration-300">
         <div
           className={`backdrop-blur-xl border text-sm px-4 py-2 rounded-2xl rounded-tr-none shadow-lg max-w-[260px] ${
@@ -348,114 +386,87 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
         </div>
       </div>
     );
-  };
 
-  const OpenPanel = () => {
-    if (!isOpen) return null;
+    if (!isMobileView) return baseBubble;
 
     return (
-      <div className="pointer-events-auto mb-2 mr-0 animate-in zoom-in-95 slide-in-from-bottom-4 duration-300 origin-bottom-right">
-        <div className="w-[280px] bg-[#0F1629]/90 backdrop-blur-xl border border-white/10 rounded-2xl shadow-[0_0_50px_rgba(0,0,0,0.5)] overflow-hidden">
-          <div className="p-3 border-b border-white/5 bg-white/5 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Sparkles size={14} className="text-blue-400" />
-              <span className="text-xs font-bold text-white">AI 助手指令</span>
-            </div>
-            <button onClick={() => setIsOpen(false)} className="text-slate-400 hover:text-white">
-              <X size={14} />
-            </button>
+      <div className="pointer-events-none w-full px-4 animate-in slide-in-from-bottom-2 fade-in duration-300">
+        <div
+          className={`w-full rounded-2xl border shadow-lg px-4 py-3 backdrop-blur-xl ${
+            danger
+              ? 'bg-red-500/10 border-red-500/30 text-red-100'
+              : 'bg-slate-900/80 border-white/15 text-white'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium">
+              {feedback || (isListening ? '麦克风监听中...' : '待命中')}
+            </span>
+            <span
+              className={`w-2 h-2 rounded-full ${
+                voiceState === 'executing'
+                  ? 'bg-emerald-400 animate-ping'
+                  : voiceState === 'awake'
+                  ? 'bg-blue-300 animate-pulse'
+                  : 'bg-yellow-300'
+              }`}
+            />
           </div>
-
-          <div className="p-3 space-y-3">
-            <form onSubmit={handleManualSubmit} className="relative">
-              <input
-                autoFocus
-                type="text"
-                value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
-                placeholder="输入指令 (如: 分析本科生占比)..."
-                className="w-full bg-black/40 border border-white/10 rounded-xl pl-3 pr-9 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500/50"
-              />
-              <button type="submit" className="absolute right-2 top-1/2 -translate-y-1/2 text-blue-400 hover:text-blue-300">
-                <Send size={14} />
-              </button>
-            </form>
-
-            <div className="flex flex-col gap-1 text-[10px] text-slate-400 bg-white/5 border border-white/5 rounded-xl px-3 py-2">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <div className={`w-2 h-2 rounded-full ${isListening ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}`} />
-                  <span className="font-medium text-white/70">
-                    {isListening
-                      ? '监听中：说“小朗小朗”（可识别成“小浪小浪”）'
-                      : '点击麦克风开启监听（需要权限）'}
-                  </span>
-                </div>
-                <span className="flex items-center gap-1 text-[10px] px-2 py-1 rounded-full bg-yellow-500/10 border border-yellow-500/30 text-yellow-200">
-                  <AlertTriangle size={10} /> 浏览器识别
-                </span>
-              </div>
-
-              {capturedSpeech && (
-                <div className="text-[10px] text-slate-300/80 break-words">
-                  <span className="text-slate-500">识别：</span>
-                  {capturedSpeech}
-                </div>
-              )}
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => {
-                  onNavigate('tools', { mode: 'analysis', query: '分析一下现在的学历分布情况' });
-                  speak('正在为您分析学历数据');
-                }}
-                className="text-[10px] bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/30 rounded-lg py-2 text-indigo-200 transition-colors flex items-center justify-center gap-1"
-              >
-                <BarChart3 size={12} /> 分析学历分布
-              </button>
-              <button
-                onClick={() => onNavigate('vision')}
-                className="text-[10px] bg-white/5 hover:bg-white/10 border border-white/5 rounded-lg py-2 text-slate-300 transition-colors"
-              >
-                打开识图
-              </button>
-              <button
-                onClick={() => onNavigate('knowledge')}
-                className="text-[10px] bg-white/5 hover:bg-white/10 border border-white/5 rounded-lg py-2 text-slate-300 transition-colors"
-              >
-                知识库
-              </button>
-              <button
-                onClick={() => onNavigate('dashboard')}
-                className="text-[10px] bg-white/5 hover:bg-white/10 border border-white/5 rounded-lg py-2 text-slate-300 transition-colors"
-              >
-                回主页
-              </button>
-            </div>
-          </div>
-
-          <div
-            onClick={toggleListening}
-            className={`p-2 border-t border-white/5 flex items-center justify-center gap-2 cursor-pointer transition-colors ${
-              isListening ? 'bg-blue-500/20 text-blue-300' : 'hover:bg-white/5 text-slate-400'
-            }`}
-          >
-            {isListening ? <Mic size={14} className="animate-pulse" /> : <MicOff size={14} />}
-            <span className="text-[10px] font-medium">{isListening ? '点击停止 / 识别' : '点击开始监听'}</span>
-          </div>
+          {capturedSpeech && (
+            <p className="text-[11px] text-slate-300 mt-1 line-clamp-2">
+              <span className="text-slate-500">识别：</span>
+              {capturedSpeech}
+            </p>
+          )}
         </div>
       </div>
     );
   };
 
+  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    const pointer = event;
+    dragStateRef.current = {
+      dragging: true,
+      moved: false,
+      startX: pointer.clientX,
+      startY: pointer.clientY,
+      originX: position.x,
+      originY: position.y,
+    };
+
+    const handlePointerMove = (e: PointerEvent) => {
+      if (!dragStateRef.current.dragging) return;
+      const dx = e.clientX - dragStateRef.current.startX;
+      const dy = e.clientY - dragStateRef.current.startY;
+      if (Math.abs(dx) + Math.abs(dy) > 6) dragStateRef.current.moved = true;
+      setPosition({
+        x: Math.min(window.innerWidth - 64, Math.max(8, dragStateRef.current.originX + dx)),
+        y: Math.min(window.innerHeight - 72, Math.max(8, dragStateRef.current.originY + dy)),
+      });
+    };
+
+    const handlePointerUp = () => {
+      if (!dragStateRef.current.moved) toggleListening();
+      dragStateRef.current.dragging = false;
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+  };
+
   const TriggerOrb = () => (
-    <div onClick={() => setIsOpen(!isOpen)} className="pointer-events-auto relative group cursor-pointer">
+    <div
+      onPointerDown={handlePointerDown}
+      className="pointer-events-auto relative group cursor-pointer touch-none select-none"
+    >
       <div
         className={`
           absolute -inset-4 rounded-full blur-xl transition-all duration-500
           ${isListening ? 'opacity-100 animate-pulse bg-blue-500/30' : 'opacity-0 group-hover:opacity-60 bg-blue-500/30'}
           ${isWakeWordDetected ? 'bg-emerald-500/50 scale-125 opacity-100' : ''}
+          ${voiceState === 'executing' ? 'bg-emerald-400/40 opacity-100' : ''}
         `}
       />
       <div
@@ -464,7 +475,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
           bg-gradient-to-br from-slate-800 to-black border border-white/20
           shadow-[0_0_20px_rgba(0,0,0,0.5)] backdrop-blur-md
           transition-transform duration-300 active:scale-95
-          ${isOpen ? 'scale-90 ring-2 ring-blue-500/50' : 'hover:-translate-y-1'}
+          ${isListening ? 'scale-90 ring-2 ring-blue-500/50' : 'hover:-translate-y-1'}
         `}
       >
         {isWakeWordDetected ? (
@@ -474,16 +485,40 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
         ) : (
           <Bot size={28} className="text-indigo-300" />
         )}
-        <div className="absolute top-1 right-1 w-3 h-3 bg-emerald-500 border-2 border-[#0F1629] rounded-full" />
+        <div
+          className={`absolute top-1 right-1 w-3 h-3 border-2 border-[#0F1629] rounded-full
+            ${voiceState === 'executing'
+              ? 'bg-emerald-400 animate-pulse'
+              : voiceState === 'awake'
+              ? 'bg-blue-300'
+              : voiceState === 'listening'
+              ? 'bg-yellow-300'
+              : 'bg-slate-500'}`}
+        />
       </div>
     </div>
   );
 
+  useEffect(() => {
+    setPosition((pos) => ({
+      x: Math.min(window.innerWidth - 72, Math.max(8, pos.x)),
+      y: Math.min(window.innerHeight - 72, Math.max(16, pos.y)),
+    }));
+  }, [isMobileView]);
+
   return (
-    <div className="fixed bottom-8 right-8 z-[9999] flex flex-col items-end gap-4 pointer-events-none">
-      <FeedbackBubble />
-      <OpenPanel />
-      <TriggerOrb />
+    <div
+      className="fixed z-[9999] pointer-events-none"
+      style={{ left: position.x, top: position.y }}
+    >
+      <div className="relative flex flex-col items-end pointer-events-none">
+        <div className="absolute bottom-[74px] right-0 flex flex-col items-end gap-2 pointer-events-none">
+          <FeedbackBubble />
+        </div>
+        <div className="pointer-events-auto">
+          <TriggerOrb />
+        </div>
+      </div>
     </div>
   );
 };
