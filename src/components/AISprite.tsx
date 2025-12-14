@@ -42,8 +42,10 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     feedbackTimeoutRef.current = window.setTimeout(() => setFeedback(''), 3500);
   };
 
-  const normalize = (s: string) => s.replace(/[，。！？、,.!?]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+  const normalize = (s: string) =>
+    (s || '').replace(/[，。！？、,.!?]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
 
+  // 双唤醒：小朗小朗（兼容小浪/小狼/小郎/小廊），以及拼音 xiaolang xiaolang
   const doubleWakeTest = /小[朗浪狼郎廊]\s*小[朗浪狼郎廊]/;
   const pinyinDoubleWakeTest = /xiao\s*lang\s*xiao\s*lang|xiaolang\s*xiaolang/i;
 
@@ -120,11 +122,13 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     const text = normalize(transcript);
     if (!text) return;
 
+    // 未唤醒：只找唤醒词
     if (!isWakeWordActiveRef.current) {
       if (detectWakeWord(text)) {
         isWakeWordActiveRef.current = true;
         setIsWakeWordDetected(true);
         armWakeTimeout();
+
         showFeedback('我在：请说出指令');
         speak('我在，请说出指令');
 
@@ -140,6 +144,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       return;
     }
 
+    // 已唤醒：收集命令
     armWakeTimeout();
 
     if (text.includes('取消') || text.includes('停止')) {
@@ -179,6 +184,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
 
     recognition.onend = () => {
       if (restartTimerRef.current) window.clearTimeout(restartTimerRef.current);
+
       if (shouldResumeRef.current) {
         restartTimerRef.current = window.setTimeout(() => {
           try {
@@ -198,28 +204,27 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     };
 
     recognition.onresult = (event: any) => {
-      const clean = (txt: string) => txt.replace(/\s+/g, ' ').trim();
+      const clean = (txt: string) => (txt || '').replace(/\s+/g, ' ').trim();
+
       let interim = '';
-      let finalStr = transcriptRef.current;
+      let finalText = '';
 
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const res = event.results[i];
         const segment = clean(res?.[0]?.transcript || '');
         if (!segment) continue;
-        if (res.isFinal) {
-          const needsSpace = finalStr && !finalStr.endsWith(' ');
-          if (!finalStr.endsWith(segment)) finalStr = clean(`${finalStr}${needsSpace ? ' ' : ''}${segment}`);
-        } else {
-          interim = segment;
-        }
+        if (res.isFinal) finalText += (finalText ? ' ' : '') + segment;
+        else interim += (interim ? ' ' : '') + segment;
       }
 
-      const preview = clean(`${finalStr} ${interim}`);
-      transcriptRef.current = preview;
-      setCapturedSpeech(preview);
+      const preview = clean(`${finalText} ${interim}`).slice(0, 180);
+      if (preview) {
+        transcriptRef.current = preview;
+        setCapturedSpeech(preview);
+      }
 
       if (interim) handleVoiceStream(interim, false);
-      if (finalStr !== transcriptRef.current || finalStr) handleVoiceStream(finalStr || preview, Boolean(finalStr));
+      if (finalText) handleVoiceStream(finalText, true);
     };
 
     recognition.onerror = (event: any) => {
@@ -270,6 +275,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       if (feedbackTimeoutRef.current) window.clearTimeout(feedbackTimeoutRef.current);
       if (wakeTimerRef.current) window.clearTimeout(wakeTimerRef.current);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const startListening = async () => {
@@ -313,13 +319,12 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     showFeedback('语音已关闭');
   };
 
+  // ✅ 这里是你之前缺失的 “}” 的地方（现在已正确闭合）
   const toggleListening = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (isListening) {
-      stopListening();
-    } else {
-      startListening();
-    }
+    if (isListening) stopListening();
+    else startListening();
+  };
 
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -437,9 +442,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
             }`}
           >
             {isListening ? <Mic size={14} className="animate-pulse" /> : <MicOff size={14} />}
-            <span className="text-[10px] font-medium">
-              {isListening ? '点击停止 / 识别' : '点击开始监听'}
-            </span>
+            <span className="text-[10px] font-medium">{isListening ? '点击停止 / 识别' : '点击开始监听'}</span>
           </div>
         </div>
       </div>
@@ -453,7 +456,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
           absolute -inset-4 rounded-full blur-xl transition-all duration-500
           ${isListening ? 'opacity-100 animate-pulse bg-blue-500/30' : 'opacity-0 group-hover:opacity-60 bg-blue-500/30'}
           ${isWakeWordDetected ? 'bg-emerald-500/50 scale-125 opacity-100' : ''}
-       `}
+        `}
       />
       <div
         className={`
@@ -462,7 +465,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
           shadow-[0_0_20px_rgba(0,0,0,0.5)] backdrop-blur-md
           transition-transform duration-300 active:scale-95
           ${isOpen ? 'scale-90 ring-2 ring-blue-500/50' : 'hover:-translate-y-1'}
-       `}
+        `}
       >
         {isWakeWordDetected ? (
           <Zap size={24} className="text-yellow-400 fill-current animate-bounce" />
