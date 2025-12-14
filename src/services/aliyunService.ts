@@ -41,6 +41,67 @@ class AliyunService {
     return config as AliyunConfig;
   }
 
+  /**
+   * 极速语音转写 (使用阿里云最新流式识别接口)
+   * 备注：通过 Vite/Vercel 代理 /aliyun-api 转发，无需暴露真实域名
+   */
+  async fastSpeechToText(
+    audioBlob: Blob,
+    onPartial: (text: string) => void,
+    onFinal: (text: string) => void
+  ) {
+    const config = await this.getConfig();
+    // 官方建议使用 stream/v1/audio/recognition，模型取默认极速版本
+    const url = `/aliyun-api/stream/v1/audio/recognition`;
+
+    this.logUsage('qwen-asr-pro');
+
+    const form = new FormData();
+    form.append('file', audioBlob, 'speech.webm');
+    form.append('model', 'paraformer-2');
+    form.append('format', 'wav');
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${config.apiKey}`,
+        },
+        body: form,
+      });
+
+      if (!response.ok) await this.handleError(response);
+      if (!response.body) throw new Error('No response body');
+
+      await this.processStream(response.body, (json) => {
+        const text = json?.output?.text || json?.result || json?.payload?.result || '';
+        const isFinal = json?.output?.completed === true || json?.is_final === true;
+
+        if (text) {
+          onPartial(text);
+          if (isFinal) onFinal(text);
+        }
+      });
+    } catch (error) {
+      console.error('Aliyun ASR Error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 仅用于前置检查：是否具备调用极速 ASR 的配置
+   * 防止在无配置环境中盲目录音后才发现无法识别，影响体验
+   */
+  async isFastAsrAvailable(): Promise<boolean> {
+    try {
+      await this.getConfig();
+      return true;
+    } catch (err) {
+      console.warn('Fast ASR unavailable:', err);
+      return false;
+    }
+  }
+
   private async logUsage(model: string) {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -170,44 +231,51 @@ class AliyunService {
   }
 
   private async processStream(body: ReadableStream<Uint8Array>, callback: (json: any) => void) {
-      const reader = body.getReader();
-      const decoder = new TextDecoder("utf-8");
-      let buffer = "";
+    const reader = body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
 
-        const chunk = decoder.decode(value, { stream: true });
-        buffer += chunk;
-        
-        const lines = buffer.split("\n");
-        if (buffer.endsWith("\n")) {
-            buffer = "";
-        } else {
-            buffer = lines.pop() || ""; 
-        }
+      buffer += decoder.decode(value, { stream: true });
 
-        for (const line of lines) {
-          if (line.startsWith("data:")) {
-             const dataStr = line.slice(5).trim();
-             if (dataStr === "" || dataStr === "[DONE]") continue;
-             try {
-               const json = JSON.parse(dataStr);
-               if (json.code && json.message) {
-                 throw new Error(json.message);
-               }
-               callback(json);
-             } catch (e) {
-                if (e instanceof Error && e.message.includes('Unexpected')) {
-                    // Ignore parse error for partial json
-                } else {
-                    throw e;
-                }
-             }
-          }
+      const lines = buffer.split('\n');
+      buffer = buffer.endsWith('\n') ? '' : lines.pop() || '';
+
+      for (const line of lines) {
+        if (!line.startsWith('data:')) continue;
+
+        const dataStr = line.slice(5).trim();
+        if (!dataStr || dataStr === '[DONE]') continue;
+
+        try {
+          const json = JSON.parse(dataStr);
+          if (json.code && json.message) throw new Error(json.message);
+          callback(json);
+        } catch (e) {
+          const isPartial = e instanceof Error && e.message.includes('Unexpected');
+          if (!isPartial) throw e;
         }
       }
+    }
+
+    // Flush any remaining buffered line to avoid losing the final payload when the
+    // stream ends without a trailing newline (some gateways omit the last "\n").
+    if (buffer.startsWith('data:')) {
+      const dataStr = buffer.slice(5).trim();
+      if (dataStr && dataStr !== '[DONE]') {
+        try {
+          const json = JSON.parse(dataStr);
+          if (json.code && json.message) throw new Error(json.message);
+          callback(json);
+        } catch (e) {
+          const isPartial = e instanceof Error && e.message.includes('Unexpected');
+          if (!isPartial) throw e;
+        }
+      }
+    }
   }
 }
 
