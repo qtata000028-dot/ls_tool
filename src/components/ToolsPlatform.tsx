@@ -1015,13 +1015,13 @@ Return JSON Format:
             <table className="w-full min-w-[620px] text-left text-[13px]">
               <thead className="bg-[#0F1629] text-slate-400 text-[11px] border-b border-white/10">
                 <tr>
-                  <th className="px-4 py-3">姓名</th>
-                  <th className="px-4 py-3">工号</th>
-                  <th className="px-4 py-3">部门</th>
-                  <th className="px-4 py-3">状态</th>
-                  <th className="px-4 py-3">电话</th>
-                  <th className="px-4 py-3">入职</th>
-                  <th className="px-4 py-3 text-right">操作</th>
+                  <th className="px-4 py-3 whitespace-nowrap">姓名</th>
+                  <th className="px-4 py-3 whitespace-nowrap">工号</th>
+                  <th className="px-4 py-3 whitespace-nowrap">部门</th>
+                  <th className="px-4 py-3 whitespace-nowrap">状态</th>
+                  <th className="px-4 py-3 whitespace-nowrap">电话</th>
+                  <th className="px-4 py-3 whitespace-nowrap">入职</th>
+                  <th className="px-4 py-3 text-right whitespace-nowrap">操作</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
@@ -1050,7 +1050,7 @@ Return JSON Format:
                         onClick={() => openEditor(row)}
                         className="active:bg-white/[0.04] hover:bg-white/[0.03] transition-colors"
                       >
-                        <td className="px-4 py-3 text-white font-medium">
+                        <td className="px-4 py-3 text-white font-medium whitespace-nowrap">
                           <div className="flex items-center gap-2">
                             <div className="w-8 h-8 rounded-full bg-slate-800 border border-white/10 overflow-hidden flex items-center justify-center text-xs font-bold text-slate-400">
                               {row.webbmp ? <img src={row.webbmp} className="w-full h-full object-cover" /> : row.employeename?.[0] || 'U'}
@@ -1058,14 +1058,14 @@ Return JSON Format:
                             <span>{row.employeename}</span>
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-slate-300 font-mono text-[12px]">{row.P_emp_no}</td>
-                        <td className="px-4 py-3 text-slate-300">{getDeptName(row.Departmentid)}</td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3 text-slate-300 font-mono text-[12px] whitespace-nowrap">{row.P_emp_no}</td>
+                        <td className="px-4 py-3 text-slate-300 whitespace-nowrap">{getDeptName(row.Departmentid)}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">
                           <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] border ${getStatusColor(row.P_emp_Status)}`}>
                             {row.P_emp_Status}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-slate-300 font-mono text-[12px]">
+                        <td className="px-4 py-3 text-slate-300 font-mono text-[12px] whitespace-nowrap">
                           <div className="flex items-center gap-2">
                             {isPhoneVisible ? row.p_emp_phone : maskedPhone}
                             {row.p_emp_phone && (
@@ -1081,10 +1081,10 @@ Return JSON Format:
                             )}
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-slate-300 text-[12px]">
+                        <td className="px-4 py-3 text-slate-300 text-[12px] whitespace-nowrap">
                           {row.P_emp_workJoindt ? String(row.P_emp_workJoindt).split('T')[0] : '-'}
                         </td>
-                        <td className="px-4 py-3 text-right">
+                        <td className="px-4 py-3 text-right whitespace-nowrap">
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
