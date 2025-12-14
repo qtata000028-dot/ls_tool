@@ -111,12 +111,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user, profile, announcements, onP
   };
 
   return (
-    <div className="w-full max-w-7xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700 pb-10">
-      
+    <div className="w-full max-w-7xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700 pb-10 px-1 sm:px-0">
+
       {/* 1. Header Section */}
-      <div className="mb-6 flex flex-col md:flex-row md:items-end justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-white mb-2 tracking-tight drop-shadow-md">
+      <div className="mb-4 sm:mb-6 flex flex-col md:flex-row md:items-end justify-between gap-4 text-center md:text-left">
+        <div className="space-y-2">
+          <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight drop-shadow-md">
             {getGreeting()}，
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-300 to-white">
               {profile?.full_name || '新用户'}
@@ -130,12 +130,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user, profile, announcements, onP
 
       {/* 2. Announcement Banner (Top Placement) */}
       {announcements.length > 0 && (
-        <div 
+        <div
           onClick={() => setSelectedAnnouncement(announcements[0])}
           className="mb-8 relative group overflow-hidden rounded-2xl bg-[#0F1629]/80 border border-blue-500/20 hover:border-blue-500/50 backdrop-blur-md shadow-lg cursor-pointer transition-all active:scale-[0.99]"
         >
            <div className="absolute top-0 left-0 w-1 h-full bg-blue-500 group-hover:bg-blue-400 transition-colors"></div>
-           <div className="p-4 flex items-start sm:items-center gap-4">
+           <div className="p-4 sm:p-5 flex items-start sm:items-center gap-4">
               <div className="shrink-0 w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center animate-pulse-slow group-hover:bg-blue-500/30 transition-colors">
                 <Megaphone className="w-5 h-5 text-blue-300" />
               </div>
@@ -158,8 +158,33 @@ const Dashboard: React.FC<DashboardProps> = ({ user, profile, announcements, onP
         </div>
       )}
 
+      {/* Mobile Quick Shortcuts */}
+      <div className="md:hidden grid grid-cols-3 gap-3 mb-4">
+        <button
+          onClick={() => onNavigate('knowledge')}
+          className="flex flex-col items-center gap-1 rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-xs font-medium text-white active:scale-[0.99] transition-all"
+        >
+          <GraduationCap className="w-4 h-4 text-emerald-300" />
+          知识库
+        </button>
+        <button
+          onClick={() => onNavigate('tools')}
+          className="flex flex-col items-center gap-1 rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-xs font-medium text-white active:scale-[0.99] transition-all"
+        >
+          <Cpu className="w-4 h-4 text-blue-300" />
+          AI工具
+        </button>
+        <button
+          onClick={() => onNavigate('vision')}
+          className="flex flex-col items-center gap-1 rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-xs font-medium text-white active:scale-[0.99] transition-all"
+        >
+          <Camera className="w-4 h-4 text-purple-300" />
+          视觉
+        </button>
+      </div>
+
       {/* 3. Main Grid Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
         
         {/* LEFT COLUMN: Main Modules */}
         <div className="lg:col-span-2 space-y-6">

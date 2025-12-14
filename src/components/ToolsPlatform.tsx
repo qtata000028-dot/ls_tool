@@ -749,7 +749,7 @@ Return JSON Format:
   const CHART_COLORS = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899', '#6366f1', '#14b8a6'];
 
   return (
-    <div className="w-full h-[85vh] max-w-[1600px] mx-auto bg-[#0F1629]/80 backdrop-blur-2xl border border-white/10 rounded-3xl flex flex-col overflow-hidden shadow-[0_30px_80px_-40px_rgba(0,0,0,0.8)] animate-in fade-in zoom-in-95 duration-500 relative">
+    <div className="w-full min-h-[82vh] md:h-[85vh] max-w-[1600px] mx-auto bg-[#0F1629]/80 backdrop-blur-2xl border border-white/10 rounded-3xl flex flex-col overflow-auto md:overflow-hidden shadow-[0_30px_80px_-40px_rgba(0,0,0,0.8)] animate-in fade-in zoom-in-95 duration-500 relative px-3 sm:px-6">
       <div className="absolute inset-0 pointer-events-none">
         <div className="absolute -left-10 -top-16 w-64 h-64 bg-indigo-500/15 blur-3xl" />
         <div className="absolute right-10 top-10 w-80 h-80 bg-emerald-500/10 blur-[120px]" />
@@ -758,7 +758,7 @@ Return JSON Format:
       </div>
 
       {/* 1. Navbar */}
-      <div className="h-16 px-6 border-b border-white/5 flex items-center justify-between shrink-0 bg-white/[0.04] backdrop-blur-xl relative z-10">
+      <div className="h-auto min-h-[64px] px-2 sm:px-6 py-2 border-b border-white/5 flex items-center justify-between shrink-0 bg-white/[0.04] backdrop-blur-xl relative z-10 rounded-2xl sm:rounded-none mt-3 sm:mt-0">
         <div className="flex items-center gap-4">
           <button
             onClick={onBack}
