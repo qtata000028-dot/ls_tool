@@ -56,7 +56,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     else if (text.includes('正在')) setVoiceState('executing');
     else if (text.toLowerCase().includes('监听')) setVoiceState('listening');
     if (feedbackTimeoutRef.current) window.clearTimeout(feedbackTimeoutRef.current);
-    feedbackTimeoutRef.current = window.setTimeout(() => setFeedback(''), 3500);
+    feedbackTimeoutRef.current = window.setTimeout(() => setFeedback(''), 2800);
   };
 
   const normalize = (s: string) =>
@@ -139,7 +139,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       return;
     }
 
-    showFeedback('未识别到指令，请再试一次');
+    showFeedback('未识别到指令');
   };
 
   const handleVoiceStream = (transcript: string, isFinal: boolean) => {
@@ -153,7 +153,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
         setIsWakeWordDetected(true);
         armWakeTimeout();
 
-        showFeedback('我在：请说出指令');
+        showFeedback('已唤醒，请说指令');
         speak('我在，请说出指令');
 
         const tail = stripWakeWord(text);
@@ -205,12 +205,12 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       isListeningRef.current = true;
       shouldResumeRef.current = true;
       setVoiceState('listening');
-      showFeedback('监听中：请说“小朗小朗”');
+      showFeedback('监听中');
     };
 
     recognition.onaudiostart = () => {
       setVoiceState('listening');
-      if (!feedback) showFeedback('已开启麦克风，等待唤醒');
+      if (!feedback) showFeedback('等待唤醒');
     };
 
     recognition.onspeechstart = () => {
@@ -342,7 +342,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       recognitionRef.current.start();
       setIsListening(true);
       isListeningRef.current = true;
-      showFeedback('监听中：请说“小朗小朗”');
+      showFeedback('监听中');
     } catch (err) {
       console.warn('语音启动失败', err);
       showFeedback('语音启动失败，请确认麦克风权限');
@@ -372,55 +372,87 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
   };
 
   const FeedbackBubble = () => {
-    if (!feedback && !isListening) return null;
+    const statusText =
+      feedback ||
+      (voiceState === 'executing'
+        ? '执行中'
+        : voiceState === 'awake'
+        ? '待指令'
+        : isListening
+        ? '监听中'
+        : '');
+
+    if (!statusText) return null;
+
+    const indicatorColor =
+      voiceState === 'executing'
+        ? 'bg-emerald-400'
+        : voiceState === 'awake'
+        ? 'bg-blue-300'
+        : isListening
+        ? 'bg-yellow-300'
+        : 'bg-slate-500';
+
     const danger = feedback.includes('不安全') || feedback.includes('HTTPS');
 
-    const baseBubble = (
-      <div className="pointer-events-auto mr-2 animate-in slide-in-from-bottom-2 fade-in duration-300">
-        <div
-          className={`backdrop-blur-xl border text-sm px-4 py-2 rounded-2xl rounded-tr-none shadow-lg max-w-[260px] ${
-            danger ? 'bg-red-500/20 border-red-500/30 text-red-200' : 'bg-white/10 border-white/20 text-white'
-          }`}
-        >
-          {feedback || (isListening ? 'Listening...' : '')}
-        </div>
-      </div>
-    );
+    const bubbleTone = danger
+      ? isMobileView
+        ? 'bg-red-500/15 border-red-500/30 text-red-100'
+        : 'bg-red-500/20 border-red-500/30 text-red-200'
+      : isMobileView
+      ? 'bg-slate-900/85 border-white/10 text-white'
+      : 'bg-white/10 border-white/20 text-white';
 
-    if (!isMobileView) return baseBubble;
+    const textSize = isMobileView ? 'text-[12px]' : 'text-sm';
 
     return (
-      <div className="pointer-events-none w-full px-4 animate-in slide-in-from-bottom-2 fade-in duration-300">
+      <div
+        className={`pointer-events-auto animate-in fade-in slide-in-from-bottom-2 duration-300 ${
+          isMobileView ? 'px-1' : 'mr-2'
+        }`}
+      >
         <div
-          className={`w-full rounded-2xl border shadow-lg px-4 py-3 backdrop-blur-xl ${
-            danger
-              ? 'bg-red-500/10 border-red-500/30 text-red-100'
-              : 'bg-slate-900/80 border-white/15 text-white'
-          }`}
+          className={`flex items-center gap-2 rounded-full shadow-lg backdrop-blur-xl border ${bubbleTone} ${textSize} ${
+            isMobileView ? 'px-3 py-2 max-w-[220px]' : 'px-4 py-2 max-w-[240px]'
+          } whitespace-nowrap overflow-hidden`}
         >
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">
-              {feedback || (isListening ? '麦克风监听中...' : '待命中')}
-            </span>
-            <span
-              className={`w-2 h-2 rounded-full ${
-                voiceState === 'executing'
-                  ? 'bg-emerald-400 animate-ping'
-                  : voiceState === 'awake'
-                  ? 'bg-blue-300 animate-pulse'
-                  : 'bg-yellow-300'
-              }`}
-            />
-          </div>
-          {capturedSpeech && (
-            <p className="text-[11px] text-slate-300 mt-1 line-clamp-2">
-              <span className="text-slate-500">识别：</span>
-              {capturedSpeech}
-            </p>
-          )}
+          <span className={`w-2 h-2 rounded-full ${indicatorColor}`} />
+          <span className="truncate">{statusText}</span>
         </div>
       </div>
     );
+
+  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    const pointer = event;
+    dragStateRef.current = {
+      dragging: true,
+      moved: false,
+      startX: pointer.clientX,
+      startY: pointer.clientY,
+      originX: position.x,
+      originY: position.y,
+    };
+
+    const handlePointerMove = (e: PointerEvent) => {
+      if (!dragStateRef.current.dragging) return;
+      const dx = e.clientX - dragStateRef.current.startX;
+      const dy = e.clientY - dragStateRef.current.startY;
+      if (Math.abs(dx) + Math.abs(dy) > 6) dragStateRef.current.moved = true;
+      setPosition({
+        x: Math.min(window.innerWidth - 64, Math.max(8, dragStateRef.current.originX + dx)),
+        y: Math.min(window.innerHeight - 72, Math.max(8, dragStateRef.current.originY + dy)),
+      });
+    };
+
+    const handlePointerUp = () => {
+      if (!dragStateRef.current.moved) toggleListening();
+      dragStateRef.current.dragging = false;
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
   };
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
