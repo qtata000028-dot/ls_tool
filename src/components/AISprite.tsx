@@ -165,9 +165,11 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     if (!('webkitSpeechRecognition' in window)) return null;
     const SpeechRecognition = (window as any).webkitSpeechRecognition;
     const recognition = new SpeechRecognition();
+
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = 'zh-CN';
+    recognition.maxAlternatives = 1;
 
     recognition.onstart = () => {
       setIsListening(true);
@@ -318,7 +320,6 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     } else {
       startListening();
     }
-  };
 
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
