@@ -15,6 +15,18 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
   const [isMobileView, setIsMobileView] = useState(
     typeof window !== 'undefined' ? window.innerWidth < 768 : false
   );
+  const [position, setPosition] = useState(() => {
+    if (typeof window === 'undefined') return { x: 16, y: 16 };
+    return { x: window.innerWidth - 96, y: window.innerHeight - 120 };
+  });
+  const dragStateRef = useRef({
+    dragging: false,
+    moved: false,
+    startX: 0,
+    startY: 0,
+    originX: 0,
+    originY: 0,
+  });
   const [isWakeWordDetected, setIsWakeWordDetected] = useState(false);
 
   const recognitionRef = useRef<any>(null);
@@ -289,7 +301,13 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
   useEffect(() => {
     synthRef.current = typeof window !== 'undefined' ? window.speechSynthesis : null;
     buildRecognizer();
-    const handleResize = () => setIsMobileView(window.innerWidth < 768);
+    const handleResize = () => {
+      setIsMobileView(window.innerWidth < 768);
+      setPosition((pos) => ({
+        x: Math.min(window.innerWidth - 72, Math.max(8, pos.x)),
+        y: Math.min(window.innerHeight - 72, Math.max(8, pos.y)),
+      }));
+    };
     window.addEventListener('resize', handleResize);
 
     return () => {
@@ -363,7 +381,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
   };
 
   const FeedbackBubble = () => {
-    if (!feedback && !(isListening && !isOpen)) return null;
+    if (!feedback && !isOpen) return null;
     const danger = feedback.includes('不安全') || feedback.includes('HTTPS');
 
     const baseBubble = (
@@ -513,13 +531,50 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     );
   };
 
+  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    const pointer = event;
+    dragStateRef.current = {
+      dragging: true,
+      moved: false,
+      startX: pointer.clientX,
+      startY: pointer.clientY,
+      originX: position.x,
+      originY: position.y,
+    };
+
+    const handlePointerMove = (e: PointerEvent) => {
+      if (!dragStateRef.current.dragging) return;
+      const dx = e.clientX - dragStateRef.current.startX;
+      const dy = e.clientY - dragStateRef.current.startY;
+      if (Math.abs(dx) + Math.abs(dy) > 6) dragStateRef.current.moved = true;
+      setPosition({
+        x: Math.min(window.innerWidth - 64, Math.max(8, dragStateRef.current.originX + dx)),
+        y: Math.min(window.innerHeight - 72, Math.max(8, dragStateRef.current.originY + dy)),
+      });
+    };
+
+    const handlePointerUp = () => {
+      if (!dragStateRef.current.moved) setIsOpen((v) => !v);
+      dragStateRef.current.dragging = false;
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+  };
+
   const TriggerOrb = () => (
-    <div onClick={() => setIsOpen(!isOpen)} className="pointer-events-auto relative group cursor-pointer">
+    <div
+      onPointerDown={handlePointerDown}
+      className="pointer-events-auto relative group cursor-pointer touch-none select-none"
+    >
       <div
         className={`
           absolute -inset-4 rounded-full blur-xl transition-all duration-500
           ${isListening ? 'opacity-100 animate-pulse bg-blue-500/30' : 'opacity-0 group-hover:opacity-60 bg-blue-500/30'}
           ${isWakeWordDetected ? 'bg-emerald-500/50 scale-125 opacity-100' : ''}
+          ${voiceState === 'executing' ? 'bg-emerald-400/40 opacity-100' : ''}
         `}
       />
       <div
@@ -538,13 +593,25 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
         ) : (
           <Bot size={28} className="text-indigo-300" />
         )}
-        <div className="absolute top-1 right-1 w-3 h-3 bg-emerald-500 border-2 border-[#0F1629] rounded-full" />
+        <div
+          className={`absolute top-1 right-1 w-3 h-3 border-2 border-[#0F1629] rounded-full
+            ${voiceState === 'executing'
+              ? 'bg-emerald-400 animate-pulse'
+              : voiceState === 'awake'
+              ? 'bg-blue-300'
+              : voiceState === 'listening'
+              ? 'bg-yellow-300'
+              : 'bg-slate-500'}`}
+        />
       </div>
     </div>
   );
 
   return (
-    <div className="fixed bottom-8 right-8 z-[9999] flex flex-col items-end gap-4 pointer-events-none">
+    <div
+      className="fixed z-[9999] flex flex-col items-end gap-3 pointer-events-auto"
+      style={{ left: position.x, top: position.y }}
+    >
       <FeedbackBubble />
       <OpenPanel />
       <TriggerOrb />
