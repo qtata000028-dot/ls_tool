@@ -22,3 +22,11 @@ View your app in AI Studio: https://ai.studio/apps/drive/1eQSnUuKfMnxWGYUGVUH8FQ
 ## Merge conflict policy
 
 If you encounter conflicts while merging, prefer the Codex branch version by running `git checkout --ours <file>` before marking the file as resolved.
+
+To resolve an entire merge using the Codex side, you can run the following sequence:
+
+```
+git checkout --ours .
+git add -A
+git commit -m "resolve: keep codex"
+```
