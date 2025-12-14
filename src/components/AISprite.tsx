@@ -421,6 +421,38 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
         </div>
       </div>
     );
+
+  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    const pointer = event;
+    dragStateRef.current = {
+      dragging: true,
+      moved: false,
+      startX: pointer.clientX,
+      startY: pointer.clientY,
+      originX: position.x,
+      originY: position.y,
+    };
+
+    const handlePointerMove = (e: PointerEvent) => {
+      if (!dragStateRef.current.dragging) return;
+      const dx = e.clientX - dragStateRef.current.startX;
+      const dy = e.clientY - dragStateRef.current.startY;
+      if (Math.abs(dx) + Math.abs(dy) > 6) dragStateRef.current.moved = true;
+      setPosition({
+        x: Math.min(window.innerWidth - 64, Math.max(8, dragStateRef.current.originX + dx)),
+        y: Math.min(window.innerHeight - 72, Math.max(8, dragStateRef.current.originY + dy)),
+      });
+    };
+
+    const handlePointerUp = () => {
+      if (!dragStateRef.current.moved) toggleListening();
+      dragStateRef.current.dragging = false;
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
   };
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
