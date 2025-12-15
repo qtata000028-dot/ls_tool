@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Bot, Mic, Zap } from 'lucide-react';
+import { Bot, Mic, MicOff, Zap } from 'lucide-react';
 
 interface AISpriteProps {
   onNavigate: (view: string, params?: any) => void;
@@ -17,7 +17,6 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     if (typeof window === 'undefined') return { x: 16, y: 16 };
     return { x: window.innerWidth - 96, y: window.innerHeight - 120 };
   });
-
   const dragStateRef = useRef({
     dragging: false,
     moved: false,
@@ -26,7 +25,6 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     originX: 0,
     originY: 0,
   });
-
   const [isWakeWordDetected, setIsWakeWordDetected] = useState(false);
 
   const recognitionRef = useRef<any>(null);
@@ -54,11 +52,9 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
 
   const showFeedback = (text: string) => {
     setFeedback(text);
-
-    if (text.includes('请说出指令') || text.includes('已唤醒')) setVoiceState('awake');
+    if (text.includes('请说出指令')) setVoiceState('awake');
     else if (text.includes('正在')) setVoiceState('executing');
-    else if (text.toLowerCase().includes('监听') || text.includes('等待唤醒')) setVoiceState('listening');
-
+    else if (text.toLowerCase().includes('监听')) setVoiceState('listening');
     if (feedbackTimeoutRef.current) window.clearTimeout(feedbackTimeoutRef.current);
     feedbackTimeoutRef.current = window.setTimeout(() => setFeedback(''), 2800);
   };
@@ -307,6 +303,14 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
 
     synthRef.current = window.speechSynthesis || null;
     buildRecognizer();
+    const handleResize = () => {
+      setIsMobileView(window.innerWidth < 768);
+      setPosition((pos) => ({
+        x: Math.min(window.innerWidth - 72, Math.max(8, pos.x)),
+        y: Math.min(window.innerHeight - 72, Math.max(8, pos.y)),
+      }));
+    };
+    window.addEventListener('resize', handleResize);
 
     const handleResize = () => {
       setIsMobileView(window.innerWidth < 768);
@@ -377,55 +381,11 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     showFeedback('语音已关闭');
   };
 
+  // ✅ 这里是你之前缺失的 “}” 的地方（现在已正确闭合）
   const toggleListening = (e?: React.MouseEvent) => {
     e?.stopPropagation();
     if (isListening) stopListening();
     else startListening();
-  };
-
-  // ✅ 只保留一个 handlePointerDown（你之前这里重复声明导致 build 失败）
-  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    // 避免触发页面滚动/选中
-    event.preventDefault();
-
-    const pointer = event;
-    dragStateRef.current = {
-      dragging: true,
-      moved: false,
-      startX: pointer.clientX,
-      startY: pointer.clientY,
-      originX: position.x,
-      originY: position.y,
-    };
-
-    const handlePointerMove = (e: PointerEvent) => {
-      if (!dragStateRef.current.dragging) return;
-
-      const dx = e.clientX - dragStateRef.current.startX;
-      const dy = e.clientY - dragStateRef.current.startY;
-
-      if (Math.abs(dx) + Math.abs(dy) > 6) dragStateRef.current.moved = true;
-
-      setPosition({
-        x: Math.min(window.innerWidth - 64, Math.max(8, dragStateRef.current.originX + dx)),
-        y: Math.min(window.innerHeight - 72, Math.max(8, dragStateRef.current.originY + dy)),
-      });
-    };
-
-    const handlePointerUp = () => {
-      const moved = dragStateRef.current.moved;
-
-      dragStateRef.current.dragging = false;
-
-      window.removeEventListener('pointermove', handlePointerMove);
-      window.removeEventListener('pointerup', handlePointerUp);
-
-      // 没移动=点击：切换语音
-      if (!moved) toggleListening();
-    };
-
-    window.addEventListener('pointermove', handlePointerMove);
-    window.addEventListener('pointerup', handlePointerUp);
   };
 
   const FeedbackBubble = () => {
@@ -476,17 +436,48 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
           <span className={`w-2 h-2 rounded-full ${indicatorColor}`} />
           <span className="truncate">{statusText}</span>
         </div>
-
-        {/* 可选：你想看到识别内容就打开下面这段 */}
-        {capturedSpeech ? (
-          <div className="mt-1 text-[11px] text-white/70 max-w-[240px] truncate">{capturedSpeech}</div>
-        ) : null}
       </div>
     );
   };
 
+  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    const pointer = event;
+    dragStateRef.current = {
+      dragging: true,
+      moved: false,
+      startX: pointer.clientX,
+      startY: pointer.clientY,
+      originX: position.x,
+      originY: position.y,
+    };
+
+    const handlePointerMove = (e: PointerEvent) => {
+      if (!dragStateRef.current.dragging) return;
+      const dx = e.clientX - dragStateRef.current.startX;
+      const dy = e.clientY - dragStateRef.current.startY;
+      if (Math.abs(dx) + Math.abs(dy) > 6) dragStateRef.current.moved = true;
+      setPosition({
+        x: Math.min(window.innerWidth - 64, Math.max(8, dragStateRef.current.originX + dx)),
+        y: Math.min(window.innerHeight - 72, Math.max(8, dragStateRef.current.originY + dy)),
+      });
+    };
+
+    const handlePointerUp = () => {
+      if (!dragStateRef.current.moved) toggleListening();
+      dragStateRef.current.dragging = false;
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+  };
+
   const TriggerOrb = () => (
-    <div onPointerDown={handlePointerDown} className="pointer-events-auto relative group cursor-pointer touch-none select-none">
+    <div
+      onPointerDown={handlePointerDown}
+      className="pointer-events-auto relative group cursor-pointer touch-none select-none"
+    >
       <div
         className={`
           absolute -inset-4 rounded-full blur-xl transition-all duration-500
@@ -511,25 +502,21 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
         ) : (
           <Bot size={28} className="text-indigo-300" />
         )}
-
         <div
           className={`absolute top-1 right-1 w-3 h-3 border-2 border-[#0F1629] rounded-full
-            ${
-              voiceState === 'executing'
-                ? 'bg-emerald-400 animate-pulse'
-                : voiceState === 'awake'
-                ? 'bg-blue-300'
-                : voiceState === 'listening'
-                ? 'bg-yellow-300'
-                : 'bg-slate-500'
-            }`}
+            ${voiceState === 'executing'
+              ? 'bg-emerald-400 animate-pulse'
+              : voiceState === 'awake'
+              ? 'bg-blue-300'
+              : voiceState === 'listening'
+              ? 'bg-yellow-300'
+              : 'bg-slate-500'}`}
         />
       </div>
     </div>
   );
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
     setPosition((pos) => ({
       x: Math.min(window.innerWidth - 72, Math.max(8, pos.x)),
       y: Math.min(window.innerHeight - 72, Math.max(16, pos.y)),
@@ -537,7 +524,10 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
   }, [isMobileView]);
 
   return (
-    <div className="fixed z-[9999] pointer-events-none" style={{ left: position.x, top: position.y }}>
+    <div
+      className="fixed z-[9999] pointer-events-none"
+      style={{ left: position.x, top: position.y }}
+    >
       <div className="relative flex flex-col items-end pointer-events-none">
         <div className="absolute bottom-[74px] right-0 flex flex-col items-end gap-2 pointer-events-none">
           <FeedbackBubble />
