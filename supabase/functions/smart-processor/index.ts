@@ -1,18 +1,17 @@
 // Supabase Edge Function: smart-processor
 // Handles wake word detection, exit handling, and command extraction with CORS-safe parsing.
 
-const corsHeaders: Record<string, string> = {
-  "Access-Control-Allow-Origin": "*", // 先用 * 排查，后续可收紧到 Vercel 域名
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS, GET",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-function json(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), {
+const ok = (obj: unknown, status = 200) =>
+  new Response(JSON.stringify(obj), {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
   });
-}
 
 function normalizeZh(s: string) {
   return (s || "").replace(/[，。！？、,.!?]/g, "").replace(/\s+/g, "").trim();
@@ -29,23 +28,23 @@ Deno.serve(async (req) => {
 
   // ✅ 2) GET：健康检查，避免你浏览器打开链接就报错
   if (req.method === "GET") {
-    return json({ ok: true, name: "smart-processor", hint: "POST JSON to use" });
+    return ok({ ok: true, name: "smart-processor", hint: "POST JSON to use" });
   }
 
   // ✅ 3) 只允许 POST
   if (req.method !== "POST") {
-    return json({ error: `Method ${req.method} not allowed` }, 405);
+    return ok({ error: `Method ${req.method} not allowed` }, 405);
   }
 
   // ✅ 4) 安全解析 JSON（空 body / 非 JSON 都兜底）
   const raw = await req.text();
-  if (!raw) return json({ error: "Empty request body" }, 400);
+  if (!raw) return ok({ error: "Empty request body" }, 400);
 
   let body: any;
   try {
     body = JSON.parse(raw);
   } catch (e) {
-    return json({ error: "Invalid JSON", detail: String(e), rawPreview: raw.slice(0, 80) }, 400);
+    return ok({ error: "Invalid JSON", detail: String(e), rawPreview: raw.slice(0, 80) }, 400);
   }
 
   const sessionId = String(body.sessionId || "");
@@ -54,7 +53,7 @@ Deno.serve(async (req) => {
   const isFinal = Boolean(body.isFinal);
 
   if (!text) {
-    return json({
+    return ok({
       nextState: state,
       tts: "",
       beep: [],
@@ -67,7 +66,7 @@ Deno.serve(async (req) => {
   const hitSleep = SLEEP_WORDS.some((w) => text.includes(w));
 
   if ((state === "wake_listen" || state === "idle") && hitWake) {
-    return json({
+    return ok({
       nextState: "awake",
       tts: "我在",
       beep: [{ freq: 660, ms: 90 }, { freq: 880, ms: 120 }],
@@ -77,7 +76,7 @@ Deno.serve(async (req) => {
   }
 
   if (state === "awake" && hitSleep) {
-    return json({
+    return ok({
       nextState: "wake_listen",
       tts: "",
       beep: [{ freq: 440, ms: 120 }],
@@ -87,7 +86,7 @@ Deno.serve(async (req) => {
   }
 
   if (state === "awake") {
-    return json({
+    return ok({
       nextState: "awake",
       tts: "",
       beep: [],
@@ -96,7 +95,7 @@ Deno.serve(async (req) => {
     });
   }
 
-  return json({
+  return ok({
     nextState: state,
     tts: "",
     beep: [],
