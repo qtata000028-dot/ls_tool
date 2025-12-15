@@ -36,6 +36,8 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
   const restartTimerRef = useRef<number | null>(null);
   const isWakeWordActiveRef = useRef(false);
   const wakeTimerRef = useRef<number | null>(null);
+  const pushToTalkRef = useRef(false);
+  const holdTimerRef = useRef<number | null>(null);
 
   const speak = (text: string) => {
     try {
@@ -145,6 +147,17 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
   const handleVoiceStream = (transcript: string, isFinal: boolean) => {
     const text = normalize(transcript);
     if (!text) return;
+
+    if (pushToTalkRef.current) {
+      transcriptRef.current = text;
+      setCapturedSpeech(text);
+
+      if (isFinal) {
+        executeCommand(text.replace(/确认|执行/g, '').trim());
+        resetWakeWord();
+      }
+      return;
+    }
 
     // 未唤醒：只找唤醒词
     if (!isWakeWordActiveRef.current) {
@@ -326,7 +339,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const startListening = async () => {
+  const startListening = async (pushToTalk = false) => {
     if (!navigator.mediaDevices?.getUserMedia) {
       showFeedback('当前环境无法访问麦克风');
       return;
@@ -340,6 +353,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       await navigator.mediaDevices.getUserMedia({ audio: true });
 
       shouldResumeRef.current = true;
+      pushToTalkRef.current = pushToTalk;
       transcriptRef.current = '';
       resetWakeWord();
       setCapturedSpeech('');
@@ -347,18 +361,29 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       recognitionRef.current.start();
       setIsListening(true);
       isListeningRef.current = true;
-      showFeedback('监听中');
+      showFeedback(pushToTalk ? '按住说话' : '监听中');
     } catch (err) {
       console.warn('语音启动失败', err);
       showFeedback('语音启动失败，请确认麦克风权限');
     }
   };
 
-  const stopListening = () => {
-    shouldResumeRef.current = false;
-    resetWakeWord();
+  const finalizeCapturedCommand = () => {
+    const spoken = transcriptRef.current.trim();
+    if (!spoken) {
+      showFeedback('未检测到语音');
+      return;
+    }
+    executeCommand(spoken.replace(/确认|执行/g, '').trim());
     transcriptRef.current = '';
+    setCapturedSpeech('');
+  };
 
+  const stopListening = (options?: { finalize?: boolean }) => {
+    const finalize = options?.finalize;
+    shouldResumeRef.current = false;
+    pushToTalkRef.current = false;
+    resetWakeWord();
     try {
       recognitionRef.current?.stop?.();
     } catch {
@@ -368,14 +393,8 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     setIsListening(false);
     isListeningRef.current = false;
     setVoiceState('idle');
-    showFeedback('语音已关闭');
-  };
-
-  // ✅ 这里是你之前缺失的 “}” 的地方（现在已正确闭合）
-  const toggleListening = (e?: React.MouseEvent) => {
-    e?.stopPropagation();
-    if (isListening) stopListening();
-    else startListening();
+    if (finalize) finalizeCapturedCommand();
+    else showFeedback('语音已关闭');
   };
 
   const FeedbackBubble = () => {
@@ -441,11 +460,21 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       originY: position.y,
     };
 
+    if (holdTimerRef.current) window.clearTimeout(holdTimerRef.current);
+    holdTimerRef.current = window.setTimeout(() => {
+      if (!dragStateRef.current.moved) {
+        startListening(true);
+      }
+    }, 120);
+
     const handlePointerMove = (e: PointerEvent) => {
       if (!dragStateRef.current.dragging) return;
       const dx = e.clientX - dragStateRef.current.startX;
       const dy = e.clientY - dragStateRef.current.startY;
       if (Math.abs(dx) + Math.abs(dy) > 6) dragStateRef.current.moved = true;
+      if (dragStateRef.current.moved && pushToTalkRef.current) {
+        stopListening();
+      }
       setPosition({
         x: Math.min(window.innerWidth - 64, Math.max(8, dragStateRef.current.originX + dx)),
         y: Math.min(window.innerHeight - 72, Math.max(8, dragStateRef.current.originY + dy)),
@@ -453,7 +482,10 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     };
 
     const handlePointerUp = () => {
-      if (!dragStateRef.current.moved) toggleListening();
+      if (holdTimerRef.current) window.clearTimeout(holdTimerRef.current);
+      if (!dragStateRef.current.moved && isListeningRef.current && pushToTalkRef.current) {
+        stopListening({ finalize: true });
+      }
       dragStateRef.current.dragging = false;
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
@@ -463,48 +495,61 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     window.addEventListener('pointerup', handlePointerUp);
   };
 
-  const TriggerOrb = () => (
-    <div
-      onPointerDown={handlePointerDown}
-      className="pointer-events-auto relative group cursor-pointer touch-none select-none"
-    >
+  const TriggerOrb = () => {
+    const pushListening = isListening && pushToTalkRef.current;
+    return (
       <div
-        className={`
-          absolute -inset-4 rounded-full blur-xl transition-all duration-500
-          ${isListening ? 'opacity-100 animate-pulse bg-blue-500/30' : 'opacity-0 group-hover:opacity-60 bg-blue-500/30'}
-          ${isWakeWordDetected ? 'bg-emerald-500/50 scale-125 opacity-100' : ''}
-          ${voiceState === 'executing' ? 'bg-emerald-400/40 opacity-100' : ''}
-        `}
-      />
-      <div
-        className={`
-          relative w-14 h-14 rounded-full flex items-center justify-center
-          bg-gradient-to-br from-slate-800 to-black border border-white/20
-          shadow-[0_0_20px_rgba(0,0,0,0.5)] backdrop-blur-md
-          transition-transform duration-300 active:scale-95
-          ${isListening ? 'scale-90 ring-2 ring-blue-500/50' : 'hover:-translate-y-1'}
-        `}
+        onPointerDown={handlePointerDown}
+        className="pointer-events-auto relative group cursor-pointer touch-none select-none"
       >
-        {isWakeWordDetected ? (
-          <Zap size={24} className="text-yellow-400 fill-current animate-bounce" />
-        ) : isListening ? (
-          <Mic size={24} className="text-blue-400 animate-pulse" />
-        ) : (
-          <Bot size={28} className="text-indigo-300" />
+        <div
+          className={`
+            absolute -inset-5 rounded-full transition-all duration-500
+            ${pushListening ? 'opacity-100 scale-110 bg-gradient-to-br from-cyan-400/30 via-blue-500/20 to-indigo-600/40 animate-pulse' : 'opacity-0 group-hover:opacity-70 bg-blue-500/20 blur-xl'}
+            ${isWakeWordDetected ? 'bg-emerald-500/50 scale-125 opacity-100' : ''}
+            ${voiceState === 'executing' ? 'bg-emerald-400/40 opacity-100' : ''}
+          `}
+        />
+        {pushListening && (
+          <div className="absolute -inset-2 rounded-full border border-cyan-300/40 animate-[ping_1.4s_ease-in-out_infinite]" />
         )}
         <div
-          className={`absolute top-1 right-1 w-3 h-3 border-2 border-[#0F1629] rounded-full
-            ${voiceState === 'executing'
-              ? 'bg-emerald-400 animate-pulse'
-              : voiceState === 'awake'
-              ? 'bg-blue-300'
-              : voiceState === 'listening'
-              ? 'bg-yellow-300'
-              : 'bg-slate-500'}`}
-        />
+          className={`
+            relative w-14 h-14 rounded-full flex items-center justify-center
+            bg-gradient-to-br from-slate-800 to-black border border-white/20
+            shadow-[0_0_20px_rgba(0,0,0,0.5)] backdrop-blur-md
+            transition-transform duration-300 active:scale-95
+            ${isListening ? 'scale-90 ring-2 ring-blue-500/50' : 'hover:-translate-y-1'}
+          `}
+        >
+          {isWakeWordDetected ? (
+            <Zap size={24} className="text-yellow-400 fill-current animate-bounce" />
+          ) : isListening ? (
+            <Mic size={24} className={pushListening ? 'text-cyan-200 animate-pulse drop-shadow-[0_0_6px_rgba(56,189,248,0.7)]' : 'text-blue-400 animate-pulse'} />
+          ) : (
+            <Bot size={28} className="text-indigo-300" />
+          )}
+          <div
+            className={`absolute top-1 right-1 w-3 h-3 border-2 border-[#0F1629] rounded-full
+              ${voiceState === 'executing'
+                ? 'bg-emerald-400 animate-pulse'
+                : voiceState === 'awake'
+                ? 'bg-blue-300'
+                : voiceState === 'listening'
+                ? 'bg-yellow-300'
+                : 'bg-slate-500'}`}
+          />
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
+
+  useEffect(() => {
+    setPosition((pos) => ({
+      x: Math.min(window.innerWidth - 72, Math.max(8, pos.x)),
+      y: Math.min(window.innerHeight - 72, Math.max(16, pos.y)),
+    }));
+  }, [isMobileView]);
 
   useEffect(() => {
     setPosition((pos) => ({

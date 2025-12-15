@@ -143,9 +143,10 @@ const CustomSelect = ({ value, onChange, options, placeholder = '请选择', ico
           </div>
         </div>
       )}
-    </div>
-  );
-};
+
+      </div>
+    );
+  };
 
 // --- Main Component ---
 const ToolsPlatform: React.FC<ToolsPlatformProps> = ({ onBack, aiParams }) => {
@@ -759,6 +760,13 @@ Return JSON Format:
 
   const CHART_COLORS = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899', '#6366f1', '#14b8a6'];
 
+  const openAnalysisCockpit = (query: string = '综合分析') => {
+    setIsAnalysisOpen(true);
+    if (!aiReportConfig) {
+      generateDynamicAnalysis(query, employees, departments, dataSchema, recruitmentTrend);
+    }
+  };
+
   const renderOverlays = () => (
     <>
       {/* 3. Editor Modal */}
@@ -1361,10 +1369,7 @@ Return JSON Format:
             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
           </button>
           <button
-            onClick={() => {
-              setIsAnalysisOpen(true);
-              if (!aiReportConfig) generateDynamicAnalysis('综合分析', employees, departments, dataSchema, recruitmentTrend);
-            }}
+            onClick={() => openAnalysisCockpit()}
             className="px-3 py-2 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 text-xs font-semibold shadow-lg shadow-indigo-500/20 border border-white/10"
           >
             AI 驾驶舱
@@ -1502,6 +1507,20 @@ Return JSON Format:
             </table>
           </div>
         </div>
+
+        {!isAnalysisOpen && (
+          <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2">
+            <div className="hidden sm:block px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-slate-300 shadow-lg shadow-black/30">
+              一键开启员工分析
+            </div>
+            <button
+              onClick={() => openAnalysisCockpit()}
+              className="p-3 rounded-full bg-gradient-to-br from-indigo-600 to-blue-600 shadow-[0_10px_40px_-20px_rgba(59,130,246,0.8)] border border-white/20 active:scale-95"
+            >
+              <BarChart3 size={18} className="text-white" />
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1553,20 +1572,14 @@ Return JSON Format:
           </button>
 
           <button
-            onClick={() => {
-              setIsAnalysisOpen(true);
-              if (!aiReportConfig) generateDynamicAnalysis('综合分析', employees, departments, dataSchema, recruitmentTrend);
-            }}
+            onClick={() => openAnalysisCockpit()}
             className="md:hidden flex items-center gap-2 px-3 py-2 rounded-lg bg-gradient-to-r from-blue-600/80 to-indigo-600/80 text-xs font-bold text-white shadow-lg shadow-blue-500/20 transition-all border border-white/10"
           >
             <BarChart3 size={14} /> AI 驾驶舱
           </button>
 
           <button
-            onClick={() => {
-              setIsAnalysisOpen(true);
-              if (!aiReportConfig) generateDynamicAnalysis('综合分析', employees, departments, dataSchema, recruitmentTrend);
-            }}
+            onClick={() => openAnalysisCockpit()}
             className="hidden md:flex items-center gap-2 px-3 py-2 rounded-lg bg-gradient-to-r from-blue-600/80 to-indigo-600/80 hover:from-blue-500 hover:to-indigo-500 text-xs font-bold text-white shadow-lg shadow-blue-500/20 transition-all border border-white/10"
           >
             <BarChart3 size={14} /> 数据驾驶舱
@@ -2637,6 +2650,20 @@ Return JSON Format:
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {!isAnalysisOpen && (
+        <div className="fixed bottom-6 right-6 z-40 flex items-center gap-2">
+          <div className="hidden lg:block px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-slate-200 shadow-lg shadow-blue-500/10">
+            员工数据分析入口
+          </div>
+          <button
+            onClick={() => openAnalysisCockpit()}
+            className="p-3 rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 border border-white/20 shadow-[0_10px_45px_-20px_rgba(59,130,246,0.9)] hover:scale-[1.02] transition-transform"
+          >
+            <BarChart3 size={18} className="text-white" />
+          </button>
         </div>
       )}
     </div>
