@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { supabase } from '../services/supabaseClient';
 import { aliyunService } from '../services/aliyunService';
 import { dataService } from '../services/dataService';
+import { fetchAppConfig } from '../services/appConfig';
 import {
   ArrowLeft,
   Search,
@@ -378,19 +378,8 @@ const ToolsPlatform: React.FC<ToolsPlatformProps> = ({ onBack, aiParams }) => {
 
   // --- API Handling ---
   const getApiConfig = async () => {
-    const { data: configData, error: configError } = await supabase
-      .from('app_configs')
-      .select('api_url, api_token')
-      .eq('config_name', 'local_sql_server')
-      .single();
-
-    if (configError || !configData?.api_url) throw new Error('配置缺失 (local_sql_server)');
-
-    let { api_url, api_token } = configData as any;
-    api_url = String(api_url || '').trim();
-    if (api_url.endsWith('/')) api_url = api_url.slice(0, -1);
-    if (!api_url.endsWith('/api/sql/execute')) api_url += '/api/sql/execute';
-    return { api_url, api_token };
+    const { apiUrl, apiToken } = await fetchAppConfig();
+    return { api_url: apiUrl, api_token: apiToken };
   };
 
   const loadData = async (triggerParams?: any) => {

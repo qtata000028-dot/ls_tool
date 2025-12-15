@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { supabase } from '../services/supabaseClient';
+import { AsrMsg, RealtimeAsrClient } from '../lib/realtimeAsrClient';
+import { fetchAppConfig } from '../services/appConfig';
 
-export type AssistantState = 'idle' | 'wake_listen' | 'awake';
+export type AssistantState = 'wake_listen' | 'awake';
 
 type ActionType = 'none' | 'navigate' | 'execute_command';
 
@@ -13,7 +14,6 @@ export interface AssistantAction {
 export interface VoiceAssistantOptions {
   onNavigate?: (view: string, params?: any) => void;
   onExecuteCommand?: (commandText: string) => void;
-  ttsEnabled?: boolean;
 }
 
 export interface VoiceAssistantStatus {
@@ -21,24 +21,51 @@ export interface VoiceAssistantStatus {
   isListening: boolean;
   transcript: string;
   feedback: string;
-  isSpeaking: boolean;
   indicator: 'gray' | 'green' | 'yellow';
 }
 
-const BEEP_PAUSE = 0.06;
+const WAKE_WORDS = ['小朗', '小浪', '小狼', '晓朗', '小郎'];
+const EXIT_WORDS = ['退下吧', '退下', '休眠', '退出待命'];
 
-const uid = () => {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-    return crypto.randomUUID();
-  }
-  return `sess-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-};
+function normalizeCn(s: string) {
+  return (s || '').replace(/\s+/g, '').replace(/[，。！？,.!?]/g, '');
+}
 
-const normalizeText = (text: string) =>
-  (text || '')
-    .replace(/[，。！？、,.!?；;：:“”"'’‘·`~…]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+function containsAny(text: string, words: string[]) {
+  const t = normalizeCn(text);
+  return words.some((w) => t.includes(w));
+}
+
+function stripWake(text: string) {
+  let t = normalizeCn(text);
+  for (const w of WAKE_WORDS) t = t.split(w).join('');
+  return t.trim();
+}
+
+function beep(freq = 880) {
+  try {
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.value = freq;
+    gain.gain.value = 0.08;
+    osc.start();
+    setTimeout(() => {
+      osc.stop();
+      ctx.close();
+    }, 120);
+  } catch {}
+}
+
+function sayIAmHere() {
+  try {
+    const u = new SpeechSynthesisUtterance('我在');
+    u.lang = 'zh-CN';
+    window.speechSynthesis.speak(u);
+  } catch {}
+}
 
 const fallbackCommandRouter = (
   commandText: string,
@@ -58,16 +85,14 @@ const useVoiceAssistant = (options?: VoiceAssistantOptions) => {
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [feedback, setFeedback] = useState('');
-  const [isSpeaking, setIsSpeaking] = useState(false);
 
-  const recognitionRef = useRef<any>(null);
+  const asrClientRef = useRef<RealtimeAsrClient | null>(null);
   const shouldListenRef = useRef(false);
-  const pausedForTTSRef = useRef(false);
-  const sessionIdRef = useRef<string>(uid());
-  const audioCtxRef = useRef<AudioContext | null>(null);
-
-  const assistantStateRef = useRef<AssistantState>('wake_listen');
+  const asrUrlRef = useRef<string | null>(null);
   const restartTimerRef = useRef<number | null>(null);
+  const wakeTimeoutRef = useRef<number | null>(null);
+  const assistantStateRef = useRef<AssistantState>('wake_listen');
+  const startingRef = useRef(false);
 
   const indicator: VoiceAssistantStatus['indicator'] = useMemo(() => {
     if (assistantState === 'awake') return 'green';
@@ -75,238 +100,176 @@ const useVoiceAssistant = (options?: VoiceAssistantOptions) => {
     return 'gray';
   }, [assistantState, isListening]);
 
-  const ensureAudioContext = useCallback(async () => {
-    if (typeof window === 'undefined') return null;
-    if (!audioCtxRef.current) {
-      audioCtxRef.current = new AudioContext();
-    }
-    if (audioCtxRef.current.state === 'suspended') {
-      await audioCtxRef.current.resume();
-    }
-    return audioCtxRef.current;
-  }, []);
-
-  const playBeeps = useCallback(
-    async (tones: { freq: number; ms: number }[]) => {
-      if (!tones?.length) return;
-      const ctx = await ensureAudioContext();
-      if (!ctx) return;
-
-      let startTime = ctx.currentTime;
-      tones.forEach(({ freq, ms }) => {
-        const oscillator = ctx.createOscillator();
-        const gain = ctx.createGain();
-        oscillator.frequency.value = freq;
-        gain.gain.setValueAtTime(0.12, startTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, startTime + ms / 1000);
-        oscillator.connect(gain);
-        gain.connect(ctx.destination);
-        oscillator.start(startTime);
-        oscillator.stop(startTime + ms / 1000);
-        startTime += ms / 1000 + BEEP_PAUSE;
-      });
-    },
-    [ensureAudioContext]
-  );
-
-  const startRecognition = useCallback(() => {
-    try {
-      recognitionRef.current?.start?.();
-    } catch (err) {
-      // ignore repeated start errors
-      console.warn('recognition restart failed', err);
+  const clearWakeTimeout = useCallback(() => {
+    if (wakeTimeoutRef.current) {
+      window.clearTimeout(wakeTimeoutRef.current);
+      wakeTimeoutRef.current = null;
     }
   }, []);
 
-  const speak = useCallback(
-    (text?: string) => {
-      if (!text) return;
-      if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-      const synth = window.speechSynthesis;
-      synth.cancel();
-      const utter = new SpeechSynthesisUtterance(text);
-      utter.lang = 'zh-CN';
-      utter.rate = 1.05;
-      pausedForTTSRef.current = true;
-      setIsSpeaking(true);
-      try {
-        recognitionRef.current?.stop?.();
-      } catch {}
-      utter.onend = () => {
-        setIsSpeaking(false);
-        pausedForTTSRef.current = false;
-        if (shouldListenRef.current) {
-          startRecognition();
-        }
-      };
-      synth.speak(utter);
-    },
-    [startRecognition]
-  );
-
-  const handleProcessorResponse = useCallback(
-    async (resp: any) => {
-      if (!resp) return;
-      const { nextState, tts, beep, action } = resp;
-      if (nextState) {
-        assistantStateRef.current = nextState;
-        setAssistantState(nextState);
-      }
-      if (beep?.length) {
-        await playBeeps(beep);
-      }
-      if (options?.ttsEnabled !== false && tts) {
-        speak(tts);
-      }
-      if (action?.type === 'navigate' && options?.onNavigate) {
-        options.onNavigate(action.payload?.view || action.payload?.target, action.payload);
-      }
-      if (action?.type === 'execute_command') {
-        const commandText = action?.payload?.commandText as string;
-        if (options?.onExecuteCommand) options.onExecuteCommand(commandText);
-        else fallbackCommandRouter(commandText || '', options?.onNavigate);
-      }
-    },
-    [options, playBeeps, speak]
-  );
-
-  const sendToProcessor = useCallback(
-    async (finalText: string) => {
-      const text = normalizeText(finalText);
-      if (!text) return;
-      const payload = {
-        sessionId: sessionIdRef.current,
-        state: assistantStateRef.current,
-        text,
-        isFinal: true,
-        ts: Date.now(),
-      };
-
-      try {
-        const { data, error } = await supabase.functions.invoke('smart-processor', {
-          body: payload,
-        });
-        if (error) {
-          console.warn('Edge invoke error', error);
-        }
-        await handleProcessorResponse(data);
-      } catch (invokeErr) {
-        console.warn('Invoke failed, fallback fetch', invokeErr);
-        try {
-          const res = await fetch(
-            'https://gsbcfgmzzjhyiedhamgs.supabase.co/functions/v1/smart-processor',
-            {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-              },
-              body: JSON.stringify(payload),
-            }
-          );
-          const data = await res.json();
-          await handleProcessorResponse(data);
-        } catch (fetchErr) {
-          console.error('Processor call failed', fetchErr);
-        }
-      }
-    },
-    [handleProcessorResponse]
-  );
-
-  const buildRecognizer = useCallback(() => {
-    if (typeof window === 'undefined') return null;
-    const Recognition = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
-    if (!Recognition) return null;
-    const recognition = new Recognition();
-    recognition.lang = 'zh-CN';
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.maxAlternatives = 3;
-
-    recognition.onstart = () => {
-      setIsListening(true);
-    };
-
-    recognition.onspeechstart = () => {
-      if (assistantStateRef.current === 'awake') {
-        setFeedback('待指令');
-      } else {
-        setFeedback('监听中');
-      }
-    };
-
-    recognition.onend = () => {
-      setIsListening(false);
-      if (pausedForTTSRef.current) return;
-      if (!shouldListenRef.current) return;
-      if (restartTimerRef.current) window.clearTimeout(restartTimerRef.current);
-      restartTimerRef.current = window.setTimeout(() => {
-        startRecognition();
-      }, 200);
-    };
-
-    recognition.onerror = () => {
-      setIsListening(false);
-    };
-
-    recognition.onresult = async (event: any) => {
-      let finalText = '';
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const res = event.results[i];
-        if (res.isFinal) {
-          finalText += res[0]?.transcript || '';
-        }
-      }
-      const cleaned = normalizeText(finalText);
-      if (cleaned) {
-        setTranscript(cleaned);
-        await sendToProcessor(cleaned);
-      }
-    };
-
-    return recognition;
-  }, [sendToProcessor, startRecognition]);
-
-  const stopListening = useCallback(() => {
-    shouldListenRef.current = false;
+  const enterStandby = useCallback(() => {
+    clearWakeTimeout();
     assistantStateRef.current = 'wake_listen';
     setAssistantState('wake_listen');
     setFeedback('');
     setTranscript('');
-    try {
-      recognitionRef.current?.stop?.();
-    } catch {}
+  }, [clearWakeTimeout]);
+
+  const scheduleWakeTimeout = useCallback(() => {
+    clearWakeTimeout();
+    wakeTimeoutRef.current = window.setTimeout(() => {
+      enterStandby();
+    }, 8000);
+  }, [clearWakeTimeout, enterStandby]);
+
+  const handleAwake = useCallback(() => {
+    assistantStateRef.current = 'awake';
+    setAssistantState('awake');
+    setFeedback('待指令');
+    beep(880);
+    sayIAmHere();
+    scheduleWakeTimeout();
+  }, [scheduleWakeTimeout]);
+
+  const handleExit = useCallback(() => {
+    beep(440);
+    enterStandby();
+  }, [enterStandby]);
+
+  const handleCommand = useCallback(
+    (text: string) => {
+      const cleaned = stripWake(text);
+      if (!cleaned) {
+        scheduleWakeTimeout();
+        return;
+      }
+      if (options?.onExecuteCommand) options.onExecuteCommand(cleaned);
+      else fallbackCommandRouter(cleaned, options?.onNavigate);
+      scheduleWakeTimeout();
+    },
+    [options, scheduleWakeTimeout]
+  );
+
+  const ensureConfig = useCallback(async () => {
+    if (asrUrlRef.current) return asrUrlRef.current;
+    const { asrWsUrl } = await fetchAppConfig();
+    asrUrlRef.current = asrWsUrl;
+    return asrWsUrl;
   }, []);
 
-  const startListening = useCallback(async () => {
-    if (typeof window === 'undefined') return;
-    if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
-      setFeedback('浏览器不支持语音');
-      return;
-    }
-    await ensureAudioContext();
-    shouldListenRef.current = true;
-    setFeedback('监听中');
-    assistantStateRef.current = 'wake_listen';
-    setAssistantState('wake_listen');
-    setTranscript('');
+  const stopClient = useCallback(() => {
+    asrClientRef.current?.stop();
+    asrClientRef.current = null;
+  }, []);
 
-    if (!recognitionRef.current) {
-      recognitionRef.current = buildRecognizer();
-    }
-    if (!recognitionRef.current) {
-      setFeedback('语音识别不可用');
-      shouldListenRef.current = false;
-      return;
+  const startClientRef = useRef<() => Promise<void> | void>();
+
+  const scheduleRestart = useCallback(() => {
+    if (!shouldListenRef.current) return;
+    if (restartTimerRef.current) window.clearTimeout(restartTimerRef.current);
+    restartTimerRef.current = window.setTimeout(() => {
+      startClientRef.current?.();
+    }, 600);
+  }, []);
+
+  const handleAsrMsg = useCallback(
+    (msg: AsrMsg) => {
+      if (!msg) return;
+      if (msg.type === 'started') {
+        setIsListening(true);
+        setFeedback('监听中');
+        return;
+      }
+      if (msg.type === 'ready') {
+        setFeedback('准备就绪');
+        return;
+      }
+      if (msg.type === 'partial') {
+        if (msg.text) {
+          setTranscript(msg.text.trim());
+          if (assistantStateRef.current !== 'awake' && containsAny(msg.text, WAKE_WORDS)) {
+            handleAwake();
+          }
+        }
+        return;
+      }
+      if (msg.type === 'final') {
+        const text = msg.text?.trim() || '';
+        if (!text) return;
+        setTranscript(text);
+        const normalized = normalizeCn(text);
+        if (assistantStateRef.current === 'awake' && containsAny(normalized, EXIT_WORDS)) {
+          handleExit();
+          return;
+        }
+        if (assistantStateRef.current !== 'awake' && containsAny(normalized, WAKE_WORDS)) {
+          handleAwake();
+        }
+        if (assistantStateRef.current === 'awake') {
+          handleCommand(text);
+        }
+        return;
+      }
+      if (msg.type === 'error' || msg.type === 'nls_error') {
+        setIsListening(false);
+        setFeedback('语音连接中断，重试中');
+        scheduleRestart();
+      }
+    },
+    [handleAwake, handleCommand, handleExit, scheduleRestart]
+  );
+
+  const startClient = useCallback(async () => {
+    if (startingRef.current) return;
+    startingRef.current = true;
+    if (restartTimerRef.current) {
+      window.clearTimeout(restartTimerRef.current);
+      restartTimerRef.current = null;
     }
     try {
-      recognitionRef.current.start();
+      const wsUrl = await ensureConfig();
+      if (!wsUrl) throw new Error('缺少语音地址');
+      const client = new RealtimeAsrClient(wsUrl, (msg) => handleAsrMsg(msg));
+      asrClientRef.current = client;
+      await client.start();
+      assistantStateRef.current = 'wake_listen';
+      setAssistantState('wake_listen');
+      setTranscript('');
+      setFeedback('监听中');
+      setIsListening(true);
     } catch (err) {
-      console.warn('start failed', err);
+      console.error('asr start failed', err);
       setFeedback('语音启动失败');
+      stopClient();
+      setIsListening(false);
+      shouldListenRef.current = false;
+    } finally {
+      startingRef.current = false;
     }
-  }, [buildRecognizer, ensureAudioContext]);
+  }, [ensureConfig, handleAsrMsg, stopClient]);
+
+  startClientRef.current = startClient;
+
+  const startListening = useCallback(async () => {
+    if (isListening || shouldListenRef.current) {
+      return;
+    }
+    if (!navigator?.mediaDevices?.getUserMedia || typeof WebSocket === 'undefined') {
+      setFeedback('设备不支持语音');
+      return;
+    }
+    shouldListenRef.current = true;
+    setFeedback('监听中');
+    setTranscript('');
+    await startClient();
+  }, [isListening, startClient]);
+
+  const stopListening = useCallback(() => {
+    shouldListenRef.current = false;
+    setIsListening(false);
+    stopClient();
+    enterStandby();
+  }, [enterStandby, stopClient]);
 
   const toggleListening = useCallback(() => {
     if (isListening || shouldListenRef.current) {
@@ -318,19 +281,17 @@ const useVoiceAssistant = (options?: VoiceAssistantOptions) => {
 
   useEffect(() => {
     return () => {
-      shouldListenRef.current = false;
-      try {
-        recognitionRef.current?.stop?.();
-      } catch {}
+      clearWakeTimeout();
+      if (restartTimerRef.current) window.clearTimeout(restartTimerRef.current);
+      stopListening();
     };
-  }, []);
+  }, [clearWakeTimeout, stopListening]);
 
   const status: VoiceAssistantStatus = {
     assistantState,
     isListening,
     transcript,
     feedback,
-    isSpeaking,
     indicator,
   };
 
