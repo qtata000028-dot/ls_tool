@@ -199,6 +199,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       if (detectWakeWord(text)) {
         isWakeWordActiveRef.current = true;
         setIsWakeWordDetected(true);
+        setVoiceState('awake');
         armWakeTimeout();
 
         showFeedback('我在，请说指令');
@@ -487,6 +488,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     setIsListening(false);
     isListeningRef.current = false;
     setVoiceState('idle');
+    setCapturedSpeech('');
     if (finalize) finalizeCapturedCommand();
     else showFeedback('语音已关闭');
   };
@@ -538,6 +540,31 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
         >
           <span className={`w-2 h-2 rounded-full ${indicatorColor}`} />
           <span className="truncate">{statusText}</span>
+        </div>
+      </div>
+    );
+  };
+
+  const TranscriptBadge = () => {
+    if (!capturedSpeech || !isListening) return null;
+
+    return (
+      <div
+        className={`pointer-events-none transition-all duration-300 ${
+          isMobileView ? 'max-w-[240px]' : 'max-w-[280px]'
+        }`}
+      >
+        <div
+          className={`flex items-center gap-2 rounded-full border shadow-lg backdrop-blur-xl ${
+            isMobileView
+              ? 'px-3 py-2 text-[12px] bg-slate-900/80 border-white/10 text-white'
+              : 'px-4 py-2 text-sm bg-white/10 border-white/20 text-white'
+          }`}
+        >
+          <span className="inline-flex h-2 w-2 rounded-full bg-emerald-400" />
+          <span className="truncate" title={capturedSpeech}>
+            {capturedSpeech}
+          </span>
         </div>
       </div>
     );
@@ -649,6 +676,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       <div className="relative flex flex-col items-end pointer-events-none">
         <div className="absolute bottom-[74px] right-0 flex flex-col items-end gap-2 pointer-events-none">
           <FeedbackBubble />
+          <TranscriptBadge />
         </div>
         <div className="pointer-events-auto">
           <TriggerOrb />
