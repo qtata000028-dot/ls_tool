@@ -1,13 +1,10 @@
 // Supabase Edge Function: smart-processor
 // Handles wake word detection, exit handling, and command extraction with CORS-safe parsing.
 
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-
 const corsHeaders: Record<string, string> = {
-  "Access-Control-Allow-Origin": "*", // You can restrict to your Vercel domain if desired
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Origin": "*", // 先用 * 排查，后续可收紧到 Vercel 域名
+  "Access-Control-Allow-Methods": "POST, OPTIONS, GET",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
 function json(data: unknown, status = 200) {
@@ -18,48 +15,39 @@ function json(data: unknown, status = 200) {
 }
 
 function normalizeZh(s: string) {
-  return (s || "")
-    .replace(/[，。！？、,.!?]/g, "")
-    .replace(/\s+/g, "")
-    .trim();
+  return (s || "").replace(/[，。！？、,.!?]/g, "").replace(/\s+/g, "").trim();
 }
 
 const WAKE_WORDS = ["小朗", "小狼", "小郎", "小浪"];
 const SLEEP_WORDS = ["退下吧", "退下", "回去吧", "休息吧"];
 
-serve(async (req) => {
-  // 1) CORS preflight
+Deno.serve(async (req) => {
+  // ✅ 1) OPTIONS 预检：直接返回，不要 req.json()
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
 
-  // 2) Allow GET for health checks
+  // ✅ 2) GET：健康检查，避免你浏览器打开链接就报错
   if (req.method === "GET") {
     return json({ ok: true, name: "smart-processor", hint: "POST JSON to use" });
   }
 
-  // 3) Only allow POST
+  // ✅ 3) 只允许 POST
   if (req.method !== "POST") {
     return json({ error: `Method ${req.method} not allowed` }, 405);
   }
 
-  // 4) Safe JSON parsing
+  // ✅ 4) 安全解析 JSON（空 body / 非 JSON 都兜底）
   const raw = await req.text();
-  if (!raw) {
-    return json({ error: "Empty request body" }, 400);
-  }
+  if (!raw) return json({ error: "Empty request body" }, 400);
 
   let body: any;
   try {
     body = JSON.parse(raw);
   } catch (e) {
-    return json(
-      { error: "Invalid JSON", detail: String(e), rawPreview: raw.slice(0, 80) },
-      400
-    );
+    return json({ error: "Invalid JSON", detail: String(e), rawPreview: raw.slice(0, 80) }, 400);
   }
 
-  // 5) Business logic
   const sessionId = String(body.sessionId || "");
   const state = String(body.state || "wake_listen");
   const text = normalizeZh(String(body.text || ""));
@@ -71,7 +59,7 @@ serve(async (req) => {
       tts: "",
       beep: [],
       action: { type: "none", payload: {} },
-      debug: { normalized: text, matched: "empty" },
+      debug: { sessionId, normalized: text, matched: "empty", isFinal },
     });
   }
 
@@ -82,12 +70,9 @@ serve(async (req) => {
     return json({
       nextState: "awake",
       tts: "我在",
-      beep: [
-        { freq: 660, ms: 90 },
-        { freq: 880, ms: 120 },
-      ],
+      beep: [{ freq: 660, ms: 90 }, { freq: 880, ms: 120 }],
       action: { type: "none", payload: {} },
-      debug: { sessionId, normalized: text, isFinal, matched: "wake" },
+      debug: { sessionId, normalized: text, matched: "wake", isFinal },
     });
   }
 
@@ -97,7 +82,7 @@ serve(async (req) => {
       tts: "",
       beep: [{ freq: 440, ms: 120 }],
       action: { type: "none", payload: {} },
-      debug: { sessionId, normalized: text, isFinal, matched: "sleep" },
+      debug: { sessionId, normalized: text, matched: "sleep", isFinal },
     });
   }
 
@@ -107,7 +92,7 @@ serve(async (req) => {
       tts: "",
       beep: [],
       action: { type: "execute_command", payload: { commandText: text } },
-      debug: { sessionId, normalized: text, isFinal, matched: "command" },
+      debug: { sessionId, normalized: text, matched: "command", isFinal },
     });
   }
 
@@ -116,6 +101,6 @@ serve(async (req) => {
     tts: "",
     beep: [],
     action: { type: "none", payload: {} },
-    debug: { sessionId, normalized: text, isFinal, matched: "none" },
+    debug: { sessionId, normalized: text, matched: "none", isFinal },
   });
 });
