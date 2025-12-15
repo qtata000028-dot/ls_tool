@@ -177,7 +177,6 @@ const ToolsPlatform: React.FC<ToolsPlatformProps> = ({ onBack, aiParams }) => {
   );
 
 
-
   // Recruitment Trend Data (Calculated)
   const [recruitmentTrend, setRecruitmentTrend] = useState<{ year: string; count: number }[]>([]);
 

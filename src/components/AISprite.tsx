@@ -303,24 +303,14 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
 
     synthRef.current = window.speechSynthesis || null;
     buildRecognizer();
-    const handleResize = () => {
+    const handleWindowResize = () => {
       setIsMobileView(window.innerWidth < 768);
       setPosition((pos) => ({
         x: Math.min(window.innerWidth - 72, Math.max(8, pos.x)),
         y: Math.min(window.innerHeight - 72, Math.max(8, pos.y)),
       }));
     };
-    window.addEventListener('resize', handleResize);
-
-    const handleResize = () => {
-      setIsMobileView(window.innerWidth < 768);
-      setPosition((pos) => ({
-        x: Math.min(window.innerWidth - 72, Math.max(8, pos.x)),
-        y: Math.min(window.innerHeight - 72, Math.max(8, pos.y)),
-      }));
-    };
-
-    window.addEventListener('resize', handleResize);
+    window.addEventListener('resize', handleWindowResize);
 
     return () => {
       try {
@@ -331,7 +321,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       if (restartTimerRef.current) window.clearTimeout(restartTimerRef.current);
       if (feedbackTimeoutRef.current) window.clearTimeout(feedbackTimeoutRef.current);
       if (wakeTimerRef.current) window.clearTimeout(wakeTimerRef.current);
-      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('resize', handleWindowResize);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
