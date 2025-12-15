@@ -67,39 +67,6 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
   const normalize = (s: string) =>
     (s || '').replace(/[，。！？、,.!?]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
 
-  const transcribeWithAli = async (blob: Blob) => {
-    const apiKey = (import.meta as any).env?.VITE_ALI_API_KEY;
-    const endpoint =
-      (import.meta as any).env?.VITE_ALI_ASR_ENDPOINT ||
-      'https://dashscope.aliyuncs.com/api/v1/services/real-time-asr/recognize';
-
-    if (!apiKey) throw new Error('缺少阿里云语音密钥');
-
-    const buffer = await blob.arrayBuffer();
-    const base64Audio = btoa(String.fromCharCode(...new Uint8Array(buffer)));
-
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'paraformer-realtime-v2',
-        audio_format: 'wav',
-        sample_rate: 16000,
-        input: base64Audio,
-        enable_punctuation: true,
-      }),
-    });
-
-    if (!res.ok) throw new Error(`阿里云接口异常: ${res.status}`);
-    const data = await res.json();
-    const outputText = data?.output?.text || data?.result || '';
-    if (!outputText) throw new Error('未返回文本');
-    return outputText as string;
-  };
-
   // 放宽唤醒词匹配，兼容口语/识别偏差（小朗/小浪/小狼/小郎/小廊/小蓝/小兰/小龙等以及拼音近音）
   const wakeVariants = [
     '小朗',
@@ -516,15 +483,6 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
         setIsListening(true);
         isListeningRef.current = true;
         showFeedback('监听中');
-      } else if ((import.meta as any).env?.VITE_ALI_API_KEY) {
-        const ok = await startAliRecorder();
-        if (!ok) showFeedback('阿里云录音启动失败');
-        else {
-          shouldResumeRef.current = false;
-          isListeningRef.current = true;
-          setIsListening(true);
-          setVoiceState('listening');
-        }
       } else {
         showFeedback('浏览器不支持语音（建议使用 Chrome）');
       }

@@ -1014,10 +1014,56 @@ Return JSON Format:
           {/* Content */}
           <div className="flex-1 overflow-y-auto p-6 md:p-8 relative z-10 custom-scrollbar">
             {isAiGenerating ? (
-              <div className="h-full flex flex-col items-center justify-center p-4">
-                <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-2 gap-8">
+              <div className="h-full flex flex-col items-center md:justify-center justify-start p-4 md:py-8 gap-4">
+                <div className="w-full max-w-4xl md:hidden space-y-3">
+                  <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-indigo-600/30 via-blue-500/20 to-emerald-500/20 border border-white/10 p-4 shadow-[0_15px_40px_-20px_rgba(79,70,229,0.8)]">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="relative">
+                        <div className="absolute inset-0 rounded-full bg-indigo-500/30 blur-lg animate-pulse" />
+                        <div className="relative w-14 h-14 rounded-full border border-white/20 bg-white/5 flex items-center justify-center">
+                          <div className="absolute inset-1 rounded-full border border-indigo-400/30 animate-spin" style={{ animationDuration: '6s' }} />
+                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-400 to-blue-500 shadow-lg shadow-blue-500/30" />
+                        </div>
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-[11px] uppercase tracking-[0.2em] text-indigo-200/80">Real-time Analysis</p>
+                        <p className="text-lg font-bold text-white">引擎已启动 · 极速渲染中</p>
+                      </div>
+                      <span className="px-3 py-1 rounded-full bg-white/10 text-[11px] text-emerald-200 border border-white/10 flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                        LIVE
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="rounded-xl bg-black/20 border border-white/10 p-3">
+                        <p className="text-[11px] text-slate-400 mb-1">摄入进度</p>
+                        <div className="text-xl font-bold text-white flex items-baseline gap-1">
+                          {processedCount.toString().padStart(4, '0')}
+                          <span className="text-[12px] text-slate-400">/ {employees.length || 150}</span>
+                        </div>
+                        <div className="mt-2 h-1.5 bg-white/5 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-indigo-400 via-blue-400 to-emerald-400 shadow-[0_0_12px_rgba(59,130,246,0.6)]"
+                            style={{ width: `${Math.min(100, (processedCount / (employees.length || 150)) * 100)}%` }}
+                          />
+                        </div>
+                      </div>
+                      <div className="rounded-xl bg-black/20 border border-white/10 p-3 flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center">
+                          <Activity className="text-emerald-300 animate-pulse" size={18} />
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-[11px] text-slate-400">状态</p>
+                          <p className="text-sm font-semibold text-white">量子内核执行 · 不需下滑即可预览</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-8">
                   {/* Left: Terminal Log */}
-                  <div className="col-span-1 bg-black/80 border border-emerald-500/30 rounded-xl shadow-[0_0_50px_rgba(16,185,129,0.05)] overflow-hidden font-mono text-xs relative h-96 flex flex-col group">
+                  <div className="col-span-1 bg-black/80 border border-emerald-500/30 rounded-xl shadow-[0_0_50px_rgba(16,185,129,0.05)] overflow-hidden font-mono text-xs relative h-[18rem] md:h-96 flex flex-col group">
                     <div className="absolute top-0 inset-x-0 h-[1px] bg-emerald-500/50 shadow-[0_0_10px_#10b981]"></div>
                     <div className="bg-emerald-950/30 px-4 py-3 border-b border-emerald-500/20 flex items-center justify-between">
                       <span className="text-emerald-400 flex items-center gap-2 font-bold tracking-wider">
