@@ -128,17 +128,17 @@ const App: React.FC = () => {
         </div>
       ) : (
         <div className="relative z-10 flex flex-col min-h-screen">
-          <Navbar 
+          <Navbar
             user={user} 
             profile={profile}
             onOpenAuth={() => {}} 
-            onLogout={handleLogout} 
+            onLogout={handleLogout}
           />
-          
-          <main className="flex-1 w-full px-4 sm:px-6 lg:px-8 py-10 pt-28 flex flex-col">
+
+          <main className="flex-1 w-full px-4 sm:px-6 lg:px-8 py-8 sm:py-10 pt-24 sm:pt-28 flex flex-col gap-6 max-w-6xl mx-auto w-full">
             {currentView === 'dashboard' && (
-              <Dashboard 
-                user={user} 
+              <Dashboard
+                user={user}
                 profile={profile} 
                 announcements={announcements}
                 onProfileUpdate={() => user && fetchProfile(user.id)} 
