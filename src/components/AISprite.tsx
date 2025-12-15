@@ -55,7 +55,8 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
 
   const showFeedback = (text: string) => {
     setFeedback(text);
-    if (text.includes('请说出指令')) setVoiceState('awake');
+    if (text.includes('请说出指令') || text.includes('请说指令') || text.includes('我在'))
+      setVoiceState('awake');
     else if (text.includes('正在')) setVoiceState('executing');
     else if (text.toLowerCase().includes('监听')) setVoiceState('listening');
     if (feedbackTimeoutRef.current) window.clearTimeout(feedbackTimeoutRef.current);
@@ -104,8 +105,8 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
 
   const detectWakeWord = (text: string) => {
     const t = (text || '').replace(/\s+/g, '');
-    const maybeSingleWake = /小[朗浪狼郎廊]/.test(t) || /xiao\s*lang/i.test(text);
-    return doubleWakeTest.test(t) || pinyinDoubleWakeTest.test(t) || (isMobileView && maybeSingleWake);
+    const singleWake = /小[朗浪狼郎廊]/.test(t) || /xiao\s*lang/i.test(text);
+    return doubleWakeTest.test(t) || pinyinDoubleWakeTest.test(t) || singleWake;
   };
 
   const stripWakeWord = (text: string) =>
@@ -200,8 +201,8 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
         setIsWakeWordDetected(true);
         armWakeTimeout();
 
-        showFeedback('已唤醒，请说指令');
-        speak('我在，请说出指令');
+        showFeedback('我在，请说指令');
+        speak('我在，请说指令');
 
         const tail = stripWakeWord(text);
         if (tail && isFinal) {
