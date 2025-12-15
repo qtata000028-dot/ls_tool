@@ -23,8 +23,8 @@ const ActionBar = ({
       {/* Row 1: Input + Mic */}
       <div className="flex items-center gap-3 w-full">
           <div className={`flex-1 flex items-center bg-black/40 rounded-xl border px-3 py-2.5 transition-all duration-300 ${isRecording ? 'border-red-500/80 shadow-[0_0_15px_rgba(239,68,68,0.4)] bg-red-950/20' : 'border-white/10 focus-within:border-indigo-500/50'}`}>
-              <input 
-              type="text" 
+              <input
+              type="text"
               value={promptInput}
               onChange={(e) => setPromptInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
@@ -33,15 +33,27 @@ const ActionBar = ({
               disabled={isAnalyzing}
               autoFocus
               />
-              <button 
+              <button
                   onClick={toggleRecording}
                   className={`p-2 rounded-lg transition-all ml-2 shrink-0 flex items-center justify-center ${
-                      isRecording 
-                      ? 'text-white bg-red-500 animate-pulse' 
+                      isRecording
+                      ? 'text-white bg-red-500 animate-pulse'
                       : 'text-slate-400 hover:text-white hover:bg-white/10'
                   }`}
               >
                   {isRecording ? <StopCircle size={18} className="fill-current"/> : <Mic size={18} />}
+              </button>
+              <button
+                  onClick={handleAnalyze}
+                  disabled={!uploadedFile || isAnalyzing}
+                  className={`p-2 rounded-lg transition-all ml-2 shrink-0 flex items-center justify-center border ${
+                    !uploadedFile || isAnalyzing
+                      ? 'border-white/5 text-slate-500 bg-white/5 cursor-not-allowed'
+                      : 'border-indigo-500/40 text-indigo-200 bg-indigo-500/10 hover:bg-indigo-500/20'
+                  }`}
+                  title="提交指令"
+              >
+                  <Send size={18} />
               </button>
           </div>
       </div>
