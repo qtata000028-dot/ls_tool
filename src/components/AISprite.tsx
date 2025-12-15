@@ -99,24 +99,76 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     return outputText as string;
   };
 
-  // 双唤醒：小朗小朗（兼容小浪/小狼/小郎/小廊），以及拼音 xiaolang xiaolang
-  const doubleWakeTest = /小[朗浪狼郎廊]\s*小[朗浪狼郎廊]/;
-  const pinyinDoubleWakeTest = /xiao\s*lang\s*xiao\s*lang|xiaolang\s*xiaolang/i;
+  // 放宽唤醒词匹配，兼容口语/识别偏差（小朗/小浪/小狼/小郎/小廊/小蓝/小兰/小龙等以及拼音近音）
+  const wakeVariants = [
+    '小朗',
+    '小浪',
+    '小狼',
+    '小郎',
+    '小廊',
+    '小蓝',
+    '小兰',
+    '小龙',
+    '小浪浪',
+    '小狼狼',
+    '晓朗',
+    '肖朗',
+    '小亮',
+    '小良',
+    '小朗朗',
+  ];
+
+  const wakePinyinVariants = [
+    'xiaolang',
+    'xiao lang',
+    'xiaolong',
+    'xiao long',
+    'xiaolan',
+    'xiao lan',
+    'xiaoliang',
+    'xiao liang',
+    'xiao rang',
+    'xiao nang',
+  ];
 
   const detectWakeWord = (text: string) => {
-    const t = (text || '').replace(/\s+/g, '');
-    const singleWake = /小[朗浪狼郎廊]/.test(t) || /xiao\s*lang/i.test(text);
-    return doubleWakeTest.test(t) || pinyinDoubleWakeTest.test(t) || singleWake;
+    const compact = (text || '').replace(/\s+/g, '');
+    const compactLower = compact.toLowerCase();
+
+    const hasCnVariant = wakeVariants.some((w) => compact.includes(w));
+    const hasPinyinVariant = wakePinyinVariants.some((w) =>
+      compactLower.includes(w.replace(/\s+/g, ''))
+    );
+
+    // 双唤醒加权：更容易捕获重复口语
+    const hasDouble = /小[朗浪狼郎廊蓝兰龙]\s*小[朗浪狼郎廊蓝兰龙]/.test(compact);
+
+    return hasCnVariant || hasPinyinVariant || hasDouble;
   };
 
-  const stripWakeWord = (text: string) =>
-    normalize(text)
-      .replace(/小[朗浪狼郎廊]\s*小[朗浪狼郎廊]/g, ' ')
-      .replace(/小[朗浪狼郎廊]/g, ' ')
-      .replace(/xiao\s*lang\s*xiao\s*lang|xiaolang\s*xiaolang/gi, ' ')
-      .replace(/xiao\s*lang|xiaolang/gi, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
+  const stripWakeWord = (text: string) => {
+    let cleaned = normalize(text);
+    const allVariants = [
+      /小[朗浪狼郎廊蓝兰龙]\s*小[朗浪狼郎廊蓝兰龙]/g,
+      /小[朗浪狼郎廊蓝兰龙]/g,
+      /xiaolang\s*xiaolang/gi,
+      /xiao\s*lang\s*xiao\s*lang/gi,
+      /xiao\s*lang/gi,
+      /xiaolang/gi,
+      /xiaolong/gi,
+      /xiao\s*long/gi,
+      /xiao\s*lan/gi,
+      /xiaolan/gi,
+      /xiao\s*liang/gi,
+      /xiaoliang/gi,
+    ];
+
+    allVariants.forEach((reg) => {
+      cleaned = cleaned.replace(reg, ' ');
+    });
+
+    return cleaned.replace(/\s+/g, ' ').trim();
+  };
 
   const resetWakeWord = () => {
     isWakeWordActiveRef.current = false;
