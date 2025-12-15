@@ -277,6 +277,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       shouldResumeRef.current = true;
 
       if (isWakeWordActiveRef.current) {
+        setIsWakeWordDetected(true);
         setVoiceState('awake');
         showFeedback('待指令');
       } else {
@@ -286,6 +287,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     };
 
     recognition.onaudiostart = () => {
+      if (isWakeWordActiveRef.current) setIsWakeWordDetected(true);
       setVoiceState(isWakeWordActiveRef.current ? 'awake' : 'listening');
       if (!feedback) showFeedback(isWakeWordActiveRef.current ? '待指令' : '等待唤醒');
     };
