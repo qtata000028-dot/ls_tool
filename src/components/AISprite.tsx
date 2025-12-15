@@ -182,6 +182,17 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     const text = normalize(transcript);
     if (!text) return;
 
+    if (pushToTalkRef.current) {
+      transcriptRef.current = text;
+      setCapturedSpeech(text);
+
+      if (isFinal) {
+        executeCommand(text.replace(/确认|执行/g, '').trim());
+        resetWakeWord();
+      }
+      return;
+    }
+
     // 未唤醒：只找唤醒词
     if (!isWakeWordActiveRef.current) {
       if (detectWakeWord(text)) {
@@ -227,7 +238,9 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
   };
 
   const buildRecognizer = () => {
+    if (typeof window === 'undefined') return null;
     if (!('webkitSpeechRecognition' in window)) return null;
+
     const SpeechRecognition = (window as any).webkitSpeechRecognition;
     const recognition = new SpeechRecognition();
 
@@ -385,7 +398,9 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
   };
 
   useEffect(() => {
-    synthRef.current = typeof window !== 'undefined' ? window.speechSynthesis : null;
+    if (typeof window === 'undefined') return;
+
+    synthRef.current = window.speechSynthesis || null;
     buildRecognizer();
     const handleWindowResize = () => {
       setIsMobileView(window.innerWidth < 768);
@@ -410,7 +425,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const startListening = async () => {
+  const startListening = async (pushToTalk = false) => {
     if (!navigator.mediaDevices?.getUserMedia) {
       showFeedback('当前环境无法访问麦克风');
       return;
@@ -460,6 +475,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
   const stopListening = (options?: { finalize?: boolean }) => {
     const finalize = options?.finalize;
     shouldResumeRef.current = false;
+    pushToTalkRef.current = false;
     resetWakeWord();
     try {
       recognitionRef.current?.stop?.();
