@@ -33,6 +33,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
   const synthRef = useRef<SpeechSynthesis | null>(null);
   const isListeningRef = useRef(false);
   const shouldResumeRef = useRef(false);
+  const manualStopRef = useRef(false);
   const restartTimerRef = useRef<number | null>(null);
   const isWakeWordActiveRef = useRef(false);
   const wakeTimerRef = useRef<number | null>(null);
@@ -323,6 +324,14 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     recognition.onend = () => {
       if (restartTimerRef.current) window.clearTimeout(restartTimerRef.current);
 
+      if (manualStopRef.current) {
+        manualStopRef.current = false;
+        setIsListening(false);
+        isListeningRef.current = false;
+        resetWakeWord();
+        return;
+      }
+
       if (shouldResumeRef.current) {
         restartTimerRef.current = window.setTimeout(() => {
           try {
@@ -491,6 +500,10 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       resetWakeWord();
       setCapturedSpeech('');
 
+      if (!recognitionRef.current) {
+        recognitionRef.current = buildRecognizer();
+      }
+
       if (recognitionRef.current) {
         shouldResumeRef.current = true;
         recognitionRef.current.start();
@@ -529,7 +542,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
   const stopListening = (options?: { finalize?: boolean }) => {
     const finalize = options?.finalize;
     shouldResumeRef.current = false;
-    pushToTalkRef.current = false;
+    manualStopRef.current = true;
     resetWakeWord();
     try {
       recognitionRef.current?.stop?.();
