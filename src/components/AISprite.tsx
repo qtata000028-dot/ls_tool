@@ -204,7 +204,9 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
   };
 
   const buildRecognizer = () => {
+    if (typeof window === 'undefined') return null;
     if (!('webkitSpeechRecognition' in window)) return null;
+
     const SpeechRecognition = (window as any).webkitSpeechRecognition;
     const recognition = new SpeechRecognition();
 
@@ -310,7 +312,9 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
   };
 
   useEffect(() => {
-    synthRef.current = typeof window !== 'undefined' ? window.speechSynthesis : null;
+    if (typeof window === 'undefined') return;
+
+    synthRef.current = window.speechSynthesis || null;
     buildRecognizer();
     const handleWindowResize = () => {
       setIsMobileView(window.innerWidth < 768);
@@ -340,7 +344,6 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       showFeedback('当前环境无法访问麦克风');
       return;
     }
-
     if (!recognitionRef.current) {
       showFeedback('浏览器不支持语音（建议使用 Chrome）');
       return;
@@ -348,11 +351,13 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
 
     try {
       await navigator.mediaDevices.getUserMedia({ audio: true });
+
       shouldResumeRef.current = true;
       pushToTalkRef.current = pushToTalk;
       transcriptRef.current = '';
       resetWakeWord();
       setCapturedSpeech('');
+
       recognitionRef.current.start();
       setIsListening(true);
       isListeningRef.current = true;
@@ -384,6 +389,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     } catch {
       // ignore
     }
+
     setIsListening(false);
     isListeningRef.current = false;
     setVoiceState('idle');
@@ -537,6 +543,13 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       </div>
     );
   };
+
+  useEffect(() => {
+    setPosition((pos) => ({
+      x: Math.min(window.innerWidth - 72, Math.max(8, pos.x)),
+      y: Math.min(window.innerHeight - 72, Math.max(16, pos.y)),
+    }));
+  }, [isMobileView]);
 
   useEffect(() => {
     setPosition((pos) => ({
