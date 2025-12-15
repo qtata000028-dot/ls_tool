@@ -264,7 +264,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     };
 
     recognition.onspeechstart = () => {
-      setVoiceState('awake');
+      setVoiceState(isWakeWordActiveRef.current ? 'awake' : 'listening');
     };
 
     recognition.onend = () => {
