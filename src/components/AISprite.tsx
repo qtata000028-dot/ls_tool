@@ -1,387 +1,35 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Bot, Mic, MicOff, Zap } from 'lucide-react';
+import useVoiceAssistant from '../hooks/useVoiceAssistant';
 
 interface AISpriteProps {
   onNavigate: (view: string, params?: any) => void;
 }
 
+const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
 const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
-  const [isListening, setIsListening] = useState(false);
-  const [capturedSpeech, setCapturedSpeech] = useState('');
-  const [feedback, setFeedback] = useState('');
-  const [voiceState, setVoiceState] = useState<'idle' | 'listening' | 'awake' | 'executing'>('idle');
   const [isMobileView, setIsMobileView] = useState(
     typeof window !== 'undefined' ? window.innerWidth < 768 : false
   );
   const [position, setPosition] = useState(() => {
     if (typeof window === 'undefined') return { x: 16, y: 16 };
-    return { x: window.innerWidth - 96, y: window.innerHeight - 120 };
+    return { x: window.innerWidth - 92, y: window.innerHeight - 132 };
   });
   const dragStateRef = useRef({
     dragging: false,
-    moved: false,
     startX: 0,
     startY: 0,
     originX: 0,
     originY: 0,
+    moved: false,
   });
-  const [isWakeWordDetected, setIsWakeWordDetected] = useState(false);
 
-  const recognitionRef = useRef<any>(null);
-  const transcriptRef = useRef('');
-  const feedbackTimeoutRef = useRef<number | null>(null);
-  const synthRef = useRef<SpeechSynthesis | null>(null);
-  const isListeningRef = useRef(false);
-  const shouldResumeRef = useRef(false);
-  const manualStopRef = useRef(false);
-  const restartTimerRef = useRef<number | null>(null);
-  const isWakeWordActiveRef = useRef(false);
-  const wakeTimerRef = useRef<number | null>(null);
-  const aliRecorderRef = useRef<MediaRecorder | null>(null);
-  const aliChunksRef = useRef<Blob[]>([]);
-  const aliActiveRef = useRef(false);
+  const { status, toggleListening } = useVoiceAssistant({
+    onNavigate,
+  });
 
-  const speak = (text: string) => {
-    try {
-      if (!synthRef.current) return;
-      synthRef.current.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = 'zh-CN';
-      utterance.rate = 1.1;
-      synthRef.current.speak(utterance);
-    } catch {
-      // ignore
-    }
-  };
-
-  const showFeedback = (text: string) => {
-    setFeedback(text);
-    if (text.includes('请说出指令') || text.includes('请说指令') || text.includes('我在'))
-      setVoiceState('awake');
-    else if (text.includes('正在')) setVoiceState('executing');
-    else if (text.toLowerCase().includes('监听')) setVoiceState('listening');
-    if (feedbackTimeoutRef.current) window.clearTimeout(feedbackTimeoutRef.current);
-    feedbackTimeoutRef.current = window.setTimeout(() => setFeedback(''), 2800);
-  };
-
-  const normalize = (s: string) =>
-    (s || '').replace(/[，。！？、,.!?]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
-
-  // 放宽唤醒词匹配，兼容口语/识别偏差（小朗/小浪/小狼/小郎/小廊/小蓝/小兰/小龙等以及拼音近音）
-  const wakeVariants = [
-    '小朗',
-    '小浪',
-    '小狼',
-    '小郎',
-    '小廊',
-    '小蓝',
-    '小兰',
-    '小龙',
-    '小浪浪',
-    '小狼狼',
-    '晓朗',
-    '肖朗',
-    '小亮',
-    '小良',
-    '小朗朗',
-  ];
-
-  const wakePinyinVariants = [
-    'xiaolang',
-    'xiao lang',
-    'xiaolong',
-    'xiao long',
-    'xiaolan',
-    'xiao lan',
-    'xiaoliang',
-    'xiao liang',
-    'xiao rang',
-    'xiao nang',
-  ];
-
-  const detectWakeWord = (text: string) => {
-    const compact = (text || '').replace(/\s+/g, '');
-    const compactLower = compact.toLowerCase();
-
-    const hasCnVariant = wakeVariants.some((w) => compact.includes(w));
-    const hasPinyinVariant = wakePinyinVariants.some((w) =>
-      compactLower.includes(w.replace(/\s+/g, ''))
-    );
-
-    // 双唤醒加权：更容易捕获重复口语
-    const hasDouble = /小[朗浪狼郎廊蓝兰龙]\s*小[朗浪狼郎廊蓝兰龙]/.test(compact);
-
-    return hasCnVariant || hasPinyinVariant || hasDouble;
-  };
-
-  const stripWakeWord = (text: string) => {
-    let cleaned = normalize(text);
-    const allVariants = [
-      /小[朗浪狼郎廊蓝兰龙]\s*小[朗浪狼郎廊蓝兰龙]/g,
-      /小[朗浪狼郎廊蓝兰龙]/g,
-      /xiaolang\s*xiaolang/gi,
-      /xiao\s*lang\s*xiao\s*lang/gi,
-      /xiao\s*lang/gi,
-      /xiaolang/gi,
-      /xiaolong/gi,
-      /xiao\s*long/gi,
-      /xiao\s*lan/gi,
-      /xiaolan/gi,
-      /xiao\s*liang/gi,
-      /xiaoliang/gi,
-    ];
-
-    allVariants.forEach((reg) => {
-      cleaned = cleaned.replace(reg, ' ');
-    });
-
-    return cleaned.replace(/\s+/g, ' ').trim();
-  };
-
-  const resetWakeWord = () => {
-    isWakeWordActiveRef.current = false;
-    setIsWakeWordDetected(false);
-    if (wakeTimerRef.current) {
-      window.clearTimeout(wakeTimerRef.current);
-      wakeTimerRef.current = null;
-    }
-  };
-
-  const armWakeTimeout = () => {
-    if (wakeTimerRef.current) window.clearTimeout(wakeTimerRef.current);
-    wakeTimerRef.current = window.setTimeout(() => {
-      resetWakeWord();
-      showFeedback('唤醒超时，请再说“小朗小朗”');
-    }, 8000);
-  };
-
-  const executeCommand = (text: string) => {
-    const cmd = normalize(text);
-    if (!cmd) {
-      showFeedback('未识别到有效指令');
-      return;
-    }
-
-    const acknowledge = (phrase?: string) => {
-      const msg = phrase || '我在，正在执行';
-      showFeedback(msg);
-      speak(msg);
-      setVoiceState('executing');
-    };
-
-    if (
-      (cmd.includes('分析') || cmd.includes('统计') || cmd.includes('比例') || cmd.includes('学历')) &&
-      (cmd.includes('员工') || cmd.includes('工具') || cmd.includes('平台') || cmd.includes('中心'))
-    ) {
-      acknowledge('好的，正在生成数据分析报告');
-      onNavigate('tools', { mode: 'analysis', query: cmd });
-      return;
-    }
-
-    if (cmd.includes('知识库')) {
-      acknowledge('正在打开知识库');
-      onNavigate('knowledge');
-      return;
-    }
-
-    if (cmd.includes('识图') || cmd.includes('视觉')) {
-      acknowledge('正在启动视觉分析');
-      onNavigate('vision');
-      return;
-    }
-
-    if (cmd.includes('主页') || cmd.includes('返回')) {
-      acknowledge('正在返回主页');
-      onNavigate('dashboard');
-      return;
-    }
-
-    showFeedback('未识别到指令');
-  };
-
-  const handleVoiceStream = (transcript: string, isFinal: boolean) => {
-    const text = normalize(transcript);
-    if (!text) return;
-
-    if (pushToTalkRef.current) {
-      transcriptRef.current = text;
-      setCapturedSpeech(text);
-
-      if (isFinal) {
-        executeCommand(text.replace(/确认|执行/g, '').trim());
-        resetWakeWord();
-      }
-      return;
-    }
-
-    // 未唤醒：只找唤醒词
-    if (!isWakeWordActiveRef.current) {
-      if (detectWakeWord(text)) {
-        isWakeWordActiveRef.current = true;
-        setIsWakeWordDetected(true);
-        setVoiceState('awake');
-        armWakeTimeout();
-
-        showFeedback('我在，请说指令');
-        speak('我在，请说指令');
-
-        const tail = stripWakeWord(text);
-        if (tail && isFinal) {
-          executeCommand(tail.replace(/确认|执行/g, '').trim());
-          resetWakeWord();
-        } else if (tail) {
-          transcriptRef.current = tail;
-          setCapturedSpeech(tail);
-        }
-      }
-      return;
-    }
-
-    // 已唤醒：收集命令
-    armWakeTimeout();
-
-    if (text.includes('取消') || text.includes('停止')) {
-      showFeedback('已取消');
-      speak('好的，已取消');
-      resetWakeWord();
-      return;
-    }
-
-    const cleaned = stripWakeWord(text);
-    if (!cleaned) return;
-
-    transcriptRef.current = cleaned;
-    setCapturedSpeech(cleaned);
-
-    if (isFinal) {
-      executeCommand(cleaned.replace(/确认|执行/g, '').trim());
-      resetWakeWord();
-    }
-  };
-
-  const buildRecognizer = () => {
-    if (typeof window === 'undefined') return null;
-    if (!('webkitSpeechRecognition' in window)) return null;
-
-    const SpeechRecognition = (window as any).webkitSpeechRecognition;
-    const recognition = new SpeechRecognition();
-
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = 'zh-CN';
-    recognition.maxAlternatives = 3;
-
-    recognition.onstart = () => {
-      setIsListening(true);
-      isListeningRef.current = true;
-      shouldResumeRef.current = true;
-
-      if (isWakeWordActiveRef.current) {
-        setIsWakeWordDetected(true);
-        setVoiceState('awake');
-        showFeedback('待指令');
-      } else {
-        setVoiceState('listening');
-        showFeedback('监听中');
-      }
-    };
-
-    recognition.onaudiostart = () => {
-      if (isWakeWordActiveRef.current) setIsWakeWordDetected(true);
-      setVoiceState(isWakeWordActiveRef.current ? 'awake' : 'listening');
-      if (!feedback) showFeedback(isWakeWordActiveRef.current ? '待指令' : '等待唤醒');
-    };
-
-    recognition.onspeechstart = () => {
-      setVoiceState(isWakeWordActiveRef.current ? 'awake' : 'listening');
-    };
-
-    recognition.onend = () => {
-      if (restartTimerRef.current) window.clearTimeout(restartTimerRef.current);
-
-      if (manualStopRef.current) {
-        manualStopRef.current = false;
-        setIsListening(false);
-        isListeningRef.current = false;
-        resetWakeWord();
-        return;
-      }
-
-      if (shouldResumeRef.current) {
-        restartTimerRef.current = window.setTimeout(() => {
-          try {
-            recognition.start();
-          } catch (err) {
-            console.warn('Restart recognition failed', err);
-            setIsListening(false);
-            isListeningRef.current = false;
-            shouldResumeRef.current = false;
-          }
-        }, 120);
-      } else {
-        setIsListening(false);
-        isListeningRef.current = false;
-        resetWakeWord();
-      }
-    };
-
-    recognition.onresult = (event: any) => {
-      const clean = (txt: string) => (txt || '').replace(/\s+/g, ' ').trim();
-
-      let interim = '';
-      let finalText = '';
-
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const res = event.results[i];
-        const segment = clean(res?.[0]?.transcript || '');
-        if (!segment) continue;
-        if (res.isFinal) finalText += (finalText ? ' ' : '') + segment;
-        else interim += (interim ? ' ' : '') + segment;
-      }
-
-      const preview = clean(`${finalText} ${interim}`).slice(0, 180);
-      if (preview) {
-        transcriptRef.current = preview;
-        setCapturedSpeech(preview);
-      }
-
-      if (interim) handleVoiceStream(interim, false);
-      if (finalText) handleVoiceStream(finalText, true);
-    };
-
-    recognition.onerror = (event: any) => {
-      console.warn('Speech Error Code:', event?.error);
-      setIsListening(false);
-      isListeningRef.current = false;
-      shouldResumeRef.current = false;
-      resetWakeWord();
-
-      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-        if (!window.isSecureContext) {
-          showFeedback('当前环境不安全：麦克风需 HTTPS 或本地预览');
-          speak('请使用 HTTPS 或本地环境');
-        } else {
-          showFeedback('麦克风权限被拒绝');
-        }
-        return;
-      }
-
-      if (event.error === 'audio-capture') {
-        showFeedback('未检测到麦克风设备');
-        return;
-      }
-
-      if (event.error === 'network') {
-        showFeedback('语音识别网络错误');
-        return;
-      }
-
-      showFeedback('语音识别异常，请重试');
-    };
-
-    recognitionRef.current = recognition;
-    return recognition;
-  };
+  const { assistantState, isListening, transcript, feedback, indicator } = status;
 
   const stopAliRecorder = async () => {
     if (!aliActiveRef.current) return;
@@ -436,282 +84,149 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
   };
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    synthRef.current = window.speechSynthesis || null;
-    buildRecognizer();
-    const handleWindowResize = () => {
+    const handleResize = () => {
       setIsMobileView(window.innerWidth < 768);
       setPosition((pos) => ({
-        x: Math.min(window.innerWidth - 72, Math.max(8, pos.x)),
-        y: Math.min(window.innerHeight - 72, Math.max(8, pos.y)),
+        x: clamp(pos.x, 12, window.innerWidth - 88),
+        y: clamp(pos.y, 12, window.innerHeight - 88),
       }));
     };
-    window.addEventListener('resize', handleWindowResize);
-
-    return () => {
-      try {
-        recognitionRef.current?.stop?.();
-      } catch {
-        // ignore
-      }
-      if (restartTimerRef.current) window.clearTimeout(restartTimerRef.current);
-      if (feedbackTimeoutRef.current) window.clearTimeout(feedbackTimeoutRef.current);
-      if (wakeTimerRef.current) window.clearTimeout(wakeTimerRef.current);
-      window.removeEventListener('resize', handleWindowResize);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
   }, []);
-
-  const startListening = async (pushToTalk = false) => {
-    if (!navigator.mediaDevices?.getUserMedia) {
-      showFeedback('当前环境无法访问麦克风');
-      return;
-    }
-
-    try {
-      await navigator.mediaDevices.getUserMedia({ audio: true });
-      transcriptRef.current = '';
-      resetWakeWord();
-      setCapturedSpeech('');
-
-      if (!recognitionRef.current) {
-        recognitionRef.current = buildRecognizer();
-      }
-
-      if (recognitionRef.current) {
-        shouldResumeRef.current = true;
-        recognitionRef.current.start();
-        setIsListening(true);
-        isListeningRef.current = true;
-        showFeedback('监听中');
-      } else {
-        showFeedback('浏览器不支持语音（建议使用 Chrome）');
-      }
-    } catch (err) {
-      console.warn('语音启动失败', err);
-      showFeedback('语音启动失败，请确认麦克风权限');
-    }
-  };
-
-  const finalizeCapturedCommand = () => {
-    const spoken = transcriptRef.current.trim();
-    if (!spoken) {
-      showFeedback('未检测到语音');
-      return;
-    }
-    executeCommand(spoken.replace(/确认|执行/g, '').trim());
-    transcriptRef.current = '';
-    setCapturedSpeech('');
-  };
-
-  const stopListening = (options?: { finalize?: boolean }) => {
-    const finalize = options?.finalize;
-    shouldResumeRef.current = false;
-    manualStopRef.current = true;
-    resetWakeWord();
-    try {
-      recognitionRef.current?.stop?.();
-    } catch {
-      // ignore
-    }
-    stopAliRecorder();
-    setIsListening(false);
-    isListeningRef.current = false;
-    setVoiceState('idle');
-    setCapturedSpeech('');
-    if (finalize) finalizeCapturedCommand();
-    else showFeedback('语音已关闭');
-  };
-
-  const FeedbackBubble = () => {
-    const statusText =
-      feedback ||
-      (voiceState === 'executing'
-        ? '执行中'
-        : voiceState === 'awake'
-        ? '待指令'
-        : isListening
-        ? '监听中'
-        : '');
-
-    if (!statusText) return null;
-
-    const indicatorColor =
-      voiceState === 'executing'
-        ? 'bg-emerald-400'
-        : voiceState === 'awake'
-        ? 'bg-blue-300'
-        : isListening
-        ? 'bg-yellow-300'
-        : 'bg-slate-500';
-
-    const danger = feedback.includes('不安全') || feedback.includes('HTTPS');
-
-    const bubbleTone = danger
-      ? isMobileView
-        ? 'bg-red-500/15 border-red-500/30 text-red-100'
-        : 'bg-red-500/20 border-red-500/30 text-red-200'
-      : isMobileView
-      ? 'bg-slate-900/85 border-white/10 text-white'
-      : 'bg-white/10 border-white/20 text-white';
-
-    const textSize = isMobileView ? 'text-[12px]' : 'text-sm';
-
-    return (
-      <div
-        className={`pointer-events-auto animate-in fade-in slide-in-from-bottom-2 duration-300 ${
-          isMobileView ? 'px-1' : 'mr-2'
-        }`}
-      >
-        <div
-          className={`flex items-center gap-2 rounded-full shadow-lg backdrop-blur-xl border ${bubbleTone} ${textSize} ${
-            isMobileView ? 'px-3 py-2 max-w-[220px]' : 'px-4 py-2 max-w-[240px]'
-          } whitespace-nowrap overflow-hidden`}
-        >
-          <span className={`w-2 h-2 rounded-full ${indicatorColor}`} />
-          <span className="truncate">{statusText}</span>
-        </div>
-      </div>
-    );
-  };
-
-  const TranscriptBadge = () => {
-    if (!capturedSpeech || !isListening) return null;
-
-    return (
-      <div
-        className={`pointer-events-none transition-all duration-300 ${
-          isMobileView ? 'max-w-[240px]' : 'max-w-[280px]'
-        }`}
-      >
-        <div
-          className={`flex items-center gap-2 rounded-full border shadow-lg backdrop-blur-xl ${
-            isMobileView
-              ? 'px-3 py-2 text-[12px] bg-slate-900/80 border-white/10 text-white'
-              : 'px-4 py-2 text-sm bg-white/10 border-white/20 text-white'
-          }`}
-        >
-          <span className="inline-flex h-2 w-2 rounded-full bg-emerald-400" />
-          <span className="truncate" title={capturedSpeech}>
-            {capturedSpeech}
-          </span>
-        </div>
-      </div>
-    );
-  };
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     const pointer = event;
     dragStateRef.current = {
       dragging: true,
-      moved: false,
       startX: pointer.clientX,
       startY: pointer.clientY,
       originX: position.x,
       originY: position.y,
+      moved: false,
     };
-
-    const handlePointerMove = (e: PointerEvent) => {
-      if (!dragStateRef.current.dragging) return;
-      const dx = e.clientX - dragStateRef.current.startX;
-      const dy = e.clientY - dragStateRef.current.startY;
-      if (Math.abs(dx) + Math.abs(dy) > 6) dragStateRef.current.moved = true;
-      setPosition({
-        x: Math.min(window.innerWidth - 64, Math.max(8, dragStateRef.current.originX + dx)),
-        y: Math.min(window.innerHeight - 72, Math.max(8, dragStateRef.current.originY + dy)),
-      });
-    };
-
-    const handlePointerUp = () => {
-      if (!dragStateRef.current.moved) {
-        if (isListeningRef.current || isListening) {
-          stopListening();
-        } else {
-          startListening();
-        }
-      }
-
-      dragStateRef.current.dragging = false;
-      window.removeEventListener('pointermove', handlePointerMove);
-      window.removeEventListener('pointerup', handlePointerUp);
-    };
-
-    window.addEventListener('pointermove', handlePointerMove);
-    window.addEventListener('pointerup', handlePointerUp);
   };
 
-  const TriggerOrb = () => {
+  const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragStateRef.current.dragging) return;
+    const pointer = event;
+    const dx = pointer.clientX - dragStateRef.current.startX;
+    const dy = pointer.clientY - dragStateRef.current.startY;
+    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) dragStateRef.current.moved = true;
+    const nextX = clamp(dragStateRef.current.originX + dx, 12, window.innerWidth - 88);
+    const nextY = clamp(dragStateRef.current.originY + dy, 12, window.innerHeight - 88);
+    setPosition({ x: nextX, y: nextY });
+  };
+
+  const handlePointerUp = () => {
+    if (!dragStateRef.current.dragging) return;
+    const moved = dragStateRef.current.moved;
+    dragStateRef.current.dragging = false;
+    if (!moved) {
+      toggleListening();
+    }
+  };
+
+  const orbTone =
+    indicator === 'green'
+      ? 'from-emerald-400 to-lime-400 shadow-emerald-400/30'
+      : indicator === 'yellow'
+      ? 'from-amber-300 to-yellow-400 shadow-amber-400/30'
+      : 'from-slate-300 to-slate-200 shadow-slate-400/30';
+
+  const statusText = feedback ||
+    (assistantState === 'awake'
+      ? '待指令'
+      : isListening
+      ? '监听中'
+      : '点击开启');
+
+  const TranscriptBadge = () => {
+    if (!transcript || !isListening) return null;
     return (
       <div
-        onPointerDown={handlePointerDown}
-        className="pointer-events-auto relative group cursor-pointer touch-none select-none"
+        className={`pointer-events-none mt-2 ${isMobileView ? 'max-w-[230px]' : 'max-w-[320px]'}`}
       >
         <div
-          className={`
-            absolute -inset-5 rounded-full transition-all duration-500
-            ${isListening ? 'opacity-100 scale-110 bg-gradient-to-br from-cyan-400/30 via-blue-500/20 to-indigo-600/40 animate-pulse' : 'opacity-0 group-hover:opacity-70 bg-blue-500/20 blur-xl'}
-            ${isWakeWordDetected ? 'bg-emerald-500/50 scale-125 opacity-100' : ''}
-            ${voiceState === 'executing' ? 'bg-emerald-400/40 opacity-100' : ''}
-          `}
-        />
-        {isListening && (
-          <div className="absolute -inset-2 rounded-full border border-cyan-300/40 animate-[ping_1.4s_ease-in-out_infinite]" />
-        )}
-        <div
-          className={`
-            relative w-14 h-14 rounded-full flex items-center justify-center
-            bg-gradient-to-br from-slate-800 to-black border border-white/20
-            shadow-[0_0_20px_rgba(0,0,0,0.5)] backdrop-blur-md
-            transition-transform duration-300 active:scale-95
-            ${isListening ? 'scale-90 ring-2 ring-blue-500/50' : 'hover:-translate-y-1'}
-          `}
+          className={`flex items-center gap-2 rounded-full border shadow-lg backdrop-blur-xl px-3 py-2 text-xs ${
+            isMobileView
+              ? 'bg-slate-900/85 border-white/10 text-white'
+              : 'bg-white/90 border-slate-200 text-slate-800'
+          }`}
         >
-          {isWakeWordDetected ? (
-            <Zap size={24} className="text-yellow-400 fill-current animate-bounce" />
-          ) : isListening ? (
-            <Mic
-              size={24}
-              className="text-cyan-200 animate-pulse drop-shadow-[0_0_6px_rgba(56,189,248,0.7)]"
-            />
-          ) : (
-            <Bot size={28} className="text-indigo-300" />
-          )}
-          <div
-            className={`absolute top-1 right-1 w-3 h-3 border-2 border-[#0F1629] rounded-full
-              ${voiceState === 'executing'
-                ? 'bg-emerald-400 animate-pulse'
-                : voiceState === 'awake'
-                ? 'bg-blue-300'
-                : voiceState === 'listening'
-                ? 'bg-yellow-300'
-                : 'bg-slate-500'}`}
-          />
+          <span className="w-2 h-2 rounded-full bg-emerald-400" />
+          <span className="truncate">{transcript}</span>
         </div>
       </div>
     );
   };
 
-  useEffect(() => {
-    setPosition((pos) => ({
-      x: Math.min(window.innerWidth - 72, Math.max(8, pos.x)),
-      y: Math.min(window.innerHeight - 72, Math.max(16, pos.y)),
-    }));
-  }, [isMobileView]);
+  const FeedbackBubble = () => {
+    if (!statusText) return null;
+    const tone =
+      assistantState === 'awake'
+        ? 'bg-emerald-500/20 border-emerald-200/40 text-emerald-50'
+        : isListening
+        ? 'bg-amber-400/20 border-amber-200/40 text-amber-50'
+        : 'bg-slate-900/80 border-white/10 text-white';
+
+    return (
+      <div className="pointer-events-none mb-2">
+        <div
+          className={`flex items-center gap-2 rounded-full ${tone} backdrop-blur-xl shadow-lg border px-3 py-2 text-xs whitespace-nowrap`}
+        >
+          <span
+            className={`w-2 h-2 rounded-full ${
+              assistantState === 'awake'
+                ? 'bg-emerald-300'
+                : isListening
+                ? 'bg-amber-300'
+                : 'bg-slate-300'
+            }`}
+          />
+          <span>{statusText}</span>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div
-      className="fixed z-[9999] pointer-events-none"
+      className="fixed z-50"
       style={{ left: position.x, top: position.y }}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
     >
-      <div className="relative flex flex-col items-end pointer-events-none">
-        <div className="absolute bottom-[74px] right-0 flex flex-col items-end gap-2 pointer-events-none">
-          <FeedbackBubble />
-          <TranscriptBadge />
-        </div>
-        <div className="pointer-events-auto">
-          <TriggerOrb />
-        </div>
+      <div className="flex flex-col items-center select-none">
+        <FeedbackBubble />
+        <button
+          type="button"
+          className={`relative h-14 w-14 rounded-full bg-gradient-to-br ${orbTone} shadow-xl flex items-center justify-center text-slate-900 transition-transform duration-200 active:scale-95 border border-white/40 backdrop-blur-xl`}
+          aria-label={isListening ? '停止监听' : '开始监听'}
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleListening();
+          }}
+        >
+          <div className="absolute inset-0 rounded-full bg-white/30 mix-blend-overlay" />
+          <div className="relative flex items-center justify-center">
+            {assistantState === 'awake' ? (
+              <Zap size={22} className="text-emerald-700" />
+            ) : isListening ? (
+              <Mic size={22} className="text-amber-700" />
+            ) : (
+              <MicOff size={22} className="text-slate-700" />
+            )}
+          </div>
+          <div className="absolute -left-6 -top-6">
+            <div className="h-6 w-6 rounded-full bg-white/70 text-slate-800 flex items-center justify-center text-xs shadow">
+              <Bot size={14} />
+            </div>
+          </div>
+        </button>
+        <TranscriptBadge />
       </div>
     </div>
   );
