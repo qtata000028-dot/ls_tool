@@ -31,58 +31,6 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
 
   const { assistantState, isListening, transcript, feedback, indicator } = status;
 
-  const stopAliRecorder = async () => {
-    if (!aliActiveRef.current) return;
-    aliActiveRef.current = false;
-    try {
-      aliRecorderRef.current?.stop();
-    } catch {
-      // ignore
-    }
-  };
-
-  const flushAliTranscript = async () => {
-    if (!aliChunksRef.current.length) return;
-    const blob = new Blob(aliChunksRef.current, { type: 'audio/webm' });
-    aliChunksRef.current = [];
-
-    try {
-      const text = await transcribeWithAli(blob);
-      if (text) {
-        handleVoiceStream(text, true);
-      } else {
-        showFeedback('未识别到语音');
-      }
-    } catch (err) {
-      console.warn('阿里云识别失败', err);
-      showFeedback('阿里云识别失败');
-    }
-  };
-
-  const startAliRecorder = async () => {
-    const apiKey = (import.meta as any).env?.VITE_ALI_API_KEY;
-    if (!apiKey) return false;
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-      aliChunksRef.current = [];
-      recorder.ondataavailable = (e) => e.data && aliChunksRef.current.push(e.data);
-      recorder.onstop = () => {
-        stream.getTracks().forEach((t) => t.stop());
-        flushAliTranscript();
-      };
-      recorder.start();
-      aliRecorderRef.current = recorder;
-      aliActiveRef.current = true;
-      showFeedback('阿里云极速识别中');
-      return true;
-    } catch (err) {
-      console.warn('启动阿里云录音失败', err);
-      return false;
-    }
-  };
-
   useEffect(() => {
     const handleResize = () => {
       setIsMobileView(window.innerWidth < 768);
