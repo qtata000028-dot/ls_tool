@@ -36,8 +36,9 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
   const restartTimerRef = useRef<number | null>(null);
   const isWakeWordActiveRef = useRef(false);
   const wakeTimerRef = useRef<number | null>(null);
-  const pushToTalkRef = useRef(false);
-  const holdTimerRef = useRef<number | null>(null);
+  const aliRecorderRef = useRef<MediaRecorder | null>(null);
+  const aliChunksRef = useRef<Blob[]>([]);
+  const aliActiveRef = useRef(false);
 
   const speak = (text: string) => {
     try {
@@ -63,6 +64,39 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
 
   const normalize = (s: string) =>
     (s || '').replace(/[，。！？、,.!?]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+
+  const transcribeWithAli = async (blob: Blob) => {
+    const apiKey = (import.meta as any).env?.VITE_ALI_API_KEY;
+    const endpoint =
+      (import.meta as any).env?.VITE_ALI_ASR_ENDPOINT ||
+      'https://dashscope.aliyuncs.com/api/v1/services/real-time-asr/recognize';
+
+    if (!apiKey) throw new Error('缺少阿里云语音密钥');
+
+    const buffer = await blob.arrayBuffer();
+    const base64Audio = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'paraformer-realtime-v2',
+        audio_format: 'wav',
+        sample_rate: 16000,
+        input: base64Audio,
+        enable_punctuation: true,
+      }),
+    });
+
+    if (!res.ok) throw new Error(`阿里云接口异常: ${res.status}`);
+    const data = await res.json();
+    const outputText = data?.output?.text || data?.result || '';
+    if (!outputText) throw new Error('未返回文本');
+    return outputText as string;
+  };
 
   // 双唤醒：小朗小朗（兼容小浪/小狼/小郎/小廊），以及拼音 xiaolang xiaolang
   const doubleWakeTest = /小[朗浪狼郎廊]\s*小[朗浪狼郎廊]/;
@@ -311,6 +345,58 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     return recognition;
   };
 
+  const stopAliRecorder = async () => {
+    if (!aliActiveRef.current) return;
+    aliActiveRef.current = false;
+    try {
+      aliRecorderRef.current?.stop();
+    } catch {
+      // ignore
+    }
+  };
+
+  const flushAliTranscript = async () => {
+    if (!aliChunksRef.current.length) return;
+    const blob = new Blob(aliChunksRef.current, { type: 'audio/webm' });
+    aliChunksRef.current = [];
+
+    try {
+      const text = await transcribeWithAli(blob);
+      if (text) {
+        handleVoiceStream(text, true);
+      } else {
+        showFeedback('未识别到语音');
+      }
+    } catch (err) {
+      console.warn('阿里云识别失败', err);
+      showFeedback('阿里云识别失败');
+    }
+  };
+
+  const startAliRecorder = async () => {
+    const apiKey = (import.meta as any).env?.VITE_ALI_API_KEY;
+    if (!apiKey) return false;
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      aliChunksRef.current = [];
+      recorder.ondataavailable = (e) => e.data && aliChunksRef.current.push(e.data);
+      recorder.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        flushAliTranscript();
+      };
+      recorder.start();
+      aliRecorderRef.current = recorder;
+      aliActiveRef.current = true;
+      showFeedback('阿里云极速识别中');
+      return true;
+    } catch (err) {
+      console.warn('启动阿里云录音失败', err);
+      return false;
+    }
+  };
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
@@ -344,24 +430,31 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       showFeedback('当前环境无法访问麦克风');
       return;
     }
-    if (!recognitionRef.current) {
-      showFeedback('浏览器不支持语音（建议使用 Chrome）');
-      return;
-    }
 
     try {
       await navigator.mediaDevices.getUserMedia({ audio: true });
-
-      shouldResumeRef.current = true;
-      pushToTalkRef.current = pushToTalk;
       transcriptRef.current = '';
       resetWakeWord();
       setCapturedSpeech('');
 
-      recognitionRef.current.start();
-      setIsListening(true);
-      isListeningRef.current = true;
-      showFeedback(pushToTalk ? '按住说话' : '监听中');
+      if (recognitionRef.current) {
+        shouldResumeRef.current = true;
+        recognitionRef.current.start();
+        setIsListening(true);
+        isListeningRef.current = true;
+        showFeedback('监听中');
+      } else if ((import.meta as any).env?.VITE_ALI_API_KEY) {
+        const ok = await startAliRecorder();
+        if (!ok) showFeedback('阿里云录音启动失败');
+        else {
+          shouldResumeRef.current = false;
+          isListeningRef.current = true;
+          setIsListening(true);
+          setVoiceState('listening');
+        }
+      } else {
+        showFeedback('浏览器不支持语音（建议使用 Chrome）');
+      }
     } catch (err) {
       console.warn('语音启动失败', err);
       showFeedback('语音启动失败，请确认麦克风权限');
@@ -389,7 +482,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     } catch {
       // ignore
     }
-
+    stopAliRecorder();
     setIsListening(false);
     isListeningRef.current = false;
     setVoiceState('idle');
@@ -460,21 +553,11 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       originY: position.y,
     };
 
-    if (holdTimerRef.current) window.clearTimeout(holdTimerRef.current);
-    holdTimerRef.current = window.setTimeout(() => {
-      if (!dragStateRef.current.moved) {
-        startListening(true);
-      }
-    }, 120);
-
     const handlePointerMove = (e: PointerEvent) => {
       if (!dragStateRef.current.dragging) return;
       const dx = e.clientX - dragStateRef.current.startX;
       const dy = e.clientY - dragStateRef.current.startY;
       if (Math.abs(dx) + Math.abs(dy) > 6) dragStateRef.current.moved = true;
-      if (dragStateRef.current.moved && pushToTalkRef.current) {
-        stopListening();
-      }
       setPosition({
         x: Math.min(window.innerWidth - 64, Math.max(8, dragStateRef.current.originX + dx)),
         y: Math.min(window.innerHeight - 72, Math.max(8, dragStateRef.current.originY + dy)),
@@ -482,10 +565,14 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     };
 
     const handlePointerUp = () => {
-      if (holdTimerRef.current) window.clearTimeout(holdTimerRef.current);
-      if (!dragStateRef.current.moved && isListeningRef.current && pushToTalkRef.current) {
-        stopListening({ finalize: true });
+      if (!dragStateRef.current.moved) {
+        if (isListeningRef.current || isListening) {
+          stopListening();
+        } else {
+          startListening();
+        }
       }
+
       dragStateRef.current.dragging = false;
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
@@ -496,7 +583,6 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
   };
 
   const TriggerOrb = () => {
-    const pushListening = isListening && pushToTalkRef.current;
     return (
       <div
         onPointerDown={handlePointerDown}
@@ -505,12 +591,12 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
         <div
           className={`
             absolute -inset-5 rounded-full transition-all duration-500
-            ${pushListening ? 'opacity-100 scale-110 bg-gradient-to-br from-cyan-400/30 via-blue-500/20 to-indigo-600/40 animate-pulse' : 'opacity-0 group-hover:opacity-70 bg-blue-500/20 blur-xl'}
+            ${isListening ? 'opacity-100 scale-110 bg-gradient-to-br from-cyan-400/30 via-blue-500/20 to-indigo-600/40 animate-pulse' : 'opacity-0 group-hover:opacity-70 bg-blue-500/20 blur-xl'}
             ${isWakeWordDetected ? 'bg-emerald-500/50 scale-125 opacity-100' : ''}
             ${voiceState === 'executing' ? 'bg-emerald-400/40 opacity-100' : ''}
           `}
         />
-        {pushListening && (
+        {isListening && (
           <div className="absolute -inset-2 rounded-full border border-cyan-300/40 animate-[ping_1.4s_ease-in-out_infinite]" />
         )}
         <div
@@ -525,7 +611,10 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
           {isWakeWordDetected ? (
             <Zap size={24} className="text-yellow-400 fill-current animate-bounce" />
           ) : isListening ? (
-            <Mic size={24} className={pushListening ? 'text-cyan-200 animate-pulse drop-shadow-[0_0_6px_rgba(56,189,248,0.7)]' : 'text-blue-400 animate-pulse'} />
+            <Mic
+              size={24}
+              className="text-cyan-200 animate-pulse drop-shadow-[0_0_6px_rgba(56,189,248,0.7)]"
+            />
           ) : (
             <Bot size={28} className="text-indigo-300" />
           )}
@@ -543,13 +632,6 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       </div>
     );
   };
-
-  useEffect(() => {
-    setPosition((pos) => ({
-      x: Math.min(window.innerWidth - 72, Math.max(8, pos.x)),
-      y: Math.min(window.innerHeight - 72, Math.max(16, pos.y)),
-    }));
-  }, [isMobileView]);
 
   useEffect(() => {
     setPosition((pos) => ({
