@@ -37,6 +37,9 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
   const restartTimerRef = useRef<number | null>(null);
   const isWakeWordActiveRef = useRef(false);
   const wakeTimerRef = useRef<number | null>(null);
+  const aliRecorderRef = useRef<MediaRecorder | null>(null);
+  const aliChunksRef = useRef<Blob[]>([]);
+  const aliActiveRef = useRef(false);
 
   const speak = (text: string) => {
     try {
@@ -200,6 +203,17 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     const text = normalize(transcript);
     if (!text) return;
 
+    if (pushToTalkRef.current) {
+      transcriptRef.current = text;
+      setCapturedSpeech(text);
+
+      if (isFinal) {
+        executeCommand(text.replace(/确认|执行/g, '').trim());
+        resetWakeWord();
+      }
+      return;
+    }
+
     // 未唤醒：只找唤醒词
     if (!isWakeWordActiveRef.current) {
       if (detectWakeWord(text)) {
@@ -246,7 +260,9 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
   };
 
   const buildRecognizer = () => {
+    if (typeof window === 'undefined') return null;
     if (!('webkitSpeechRecognition' in window)) return null;
+
     const SpeechRecognition = (window as any).webkitSpeechRecognition;
     const recognition = new SpeechRecognition();
 
@@ -365,8 +381,62 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     return recognition;
   };
 
+  const stopAliRecorder = async () => {
+    if (!aliActiveRef.current) return;
+    aliActiveRef.current = false;
+    try {
+      aliRecorderRef.current?.stop();
+    } catch {
+      // ignore
+    }
+  };
+
+  const flushAliTranscript = async () => {
+    if (!aliChunksRef.current.length) return;
+    const blob = new Blob(aliChunksRef.current, { type: 'audio/webm' });
+    aliChunksRef.current = [];
+
+    try {
+      const text = await transcribeWithAli(blob);
+      if (text) {
+        handleVoiceStream(text, true);
+      } else {
+        showFeedback('未识别到语音');
+      }
+    } catch (err) {
+      console.warn('阿里云识别失败', err);
+      showFeedback('阿里云识别失败');
+    }
+  };
+
+  const startAliRecorder = async () => {
+    const apiKey = (import.meta as any).env?.VITE_ALI_API_KEY;
+    if (!apiKey) return false;
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      aliChunksRef.current = [];
+      recorder.ondataavailable = (e) => e.data && aliChunksRef.current.push(e.data);
+      recorder.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        flushAliTranscript();
+      };
+      recorder.start();
+      aliRecorderRef.current = recorder;
+      aliActiveRef.current = true;
+      showFeedback('阿里云极速识别中');
+      return true;
+    } catch (err) {
+      console.warn('启动阿里云录音失败', err);
+      return false;
+    }
+  };
+
   useEffect(() => {
-    synthRef.current = typeof window !== 'undefined' ? window.speechSynthesis : null;
+    if (typeof window === 'undefined') return;
+
+    synthRef.current = window.speechSynthesis || null;
     buildRecognizer();
     const handleWindowResize = () => {
       setIsMobileView(window.innerWidth < 768);
@@ -391,7 +461,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const startListening = async () => {
+  const startListening = async (pushToTalk = false) => {
     if (!navigator.mediaDevices?.getUserMedia) {
       showFeedback('当前环境无法访问麦克风');
       return;
@@ -443,6 +513,7 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
     } catch {
       // ignore
     }
+    stopAliRecorder();
     setIsListening(false);
     isListeningRef.current = false;
     setVoiceState('idle');
