@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { supabase } from '../services/supabaseClient';
 import { aliyunService } from '../services/aliyunService';
 import { dataService } from '../services/dataService';
+import { fetchAppConfig } from '../services/appConfig';
 import {
   ArrowLeft,
   Search,
@@ -143,9 +143,10 @@ const CustomSelect = ({ value, onChange, options, placeholder = '请选择', ico
           </div>
         </div>
       )}
-    </div>
-  );
-};
+
+      </div>
+    );
+  };
 
 // --- Main Component ---
 const ToolsPlatform: React.FC<ToolsPlatformProps> = ({ onBack, aiParams }) => {
@@ -172,6 +173,10 @@ const ToolsPlatform: React.FC<ToolsPlatformProps> = ({ onBack, aiParams }) => {
   const [isAiGenerating, setIsAiGenerating] = useState(false);
   const [aiReportConfig, setAiReportConfig] = useState<AIReport | null>(null);
   const [followQuery, setFollowQuery] = useState('');
+  const [isMobileView, setIsMobileView] = useState(
+    typeof window !== 'undefined' ? window.innerWidth < 768 : false
+  );
+
 
   // Recruitment Trend Data (Calculated)
   const [recruitmentTrend, setRecruitmentTrend] = useState<{ year: string; count: number }[]>([]);
@@ -373,19 +378,8 @@ const ToolsPlatform: React.FC<ToolsPlatformProps> = ({ onBack, aiParams }) => {
 
   // --- API Handling ---
   const getApiConfig = async () => {
-    const { data: configData, error: configError } = await supabase
-      .from('app_configs')
-      .select('api_url, api_token')
-      .eq('config_name', 'local_sql_server')
-      .single();
-
-    if (configError || !configData?.api_url) throw new Error('配置缺失 (local_sql_server)');
-
-    let { api_url, api_token } = configData as any;
-    api_url = String(api_url || '').trim();
-    if (api_url.endsWith('/')) api_url = api_url.slice(0, -1);
-    if (!api_url.endsWith('/api/sql/execute')) api_url += '/api/sql/execute';
-    return { api_url, api_token };
+    const { apiUrl, apiToken } = await fetchAppConfig();
+    return { api_url: apiUrl, api_token: apiToken };
   };
 
   const loadData = async (triggerParams?: any) => {
@@ -660,6 +654,7 @@ Return JSON Format:
   const openEditor = (emp: Employee) => {
     setCurrentEmp({ ...emp });
     setIsEditorOpen(true);
+    setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 0);
   };
 
   const sqlEscape = (v: any) => String(v ?? '').replace(/'/g, "''");
@@ -735,6 +730,12 @@ Return JSON Format:
     setFollowQuery('');
   };
 
+  useEffect(() => {
+    const handleResize = () => setIsMobileView(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const deptOptions = [
     { value: '', label: '所有部门' },
     ...departments.map((d) => ({ value: d.Departmentid, label: d.departmentname })),
@@ -748,8 +749,828 @@ Return JSON Format:
 
   const CHART_COLORS = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899', '#6366f1', '#14b8a6'];
 
+  const openAnalysisCockpit = (query: string = '综合分析') => {
+    setIsAnalysisOpen(true);
+    if (!aiReportConfig) {
+      generateDynamicAnalysis(query, employees, departments, dataSchema, recruitmentTrend);
+    }
+  };
+
+  const renderOverlays = () => (
+    <>
+      {/* 3. Editor Modal */}
+      {isEditorOpen && currentEmp && (
+        <div className="fixed inset-0 z-[100] flex items-start md:items-center justify-center p-3 sm:p-4">
+          <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm" onClick={() => setIsEditorOpen(false)} />
+          <div className="relative w-full max-w-lg md:max-w-2xl bg-[#0F1629] border border-white/10 rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 h-[90vh] md:h-auto flex flex-col">
+            <div className="px-6 py-4 border-b border-white/5 bg-white/[0.02] flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-slate-800 border border-white/10 overflow-hidden flex items-center justify-center">
+                  {currentEmp.webbmp ? (
+                    <img src={currentEmp.webbmp} className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="font-bold text-slate-400">{currentEmp.employeename?.[0] || 'U'}</span>
+                  )}
+                </div>
+                <div>
+                  <h3 className="font-bold text-white text-base">编辑员工信息</h3>
+                  <p className="text-xs text-slate-400">工号: {currentEmp.P_emp_no}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsEditorOpen(false)}
+                className="p-1.5 rounded-full hover:bg-white/10 text-slate-400 hover:text-white"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5 overflow-y-auto flex-1">
+              <div className="col-span-1 space-y-1.5">
+                <label className="text-xs font-medium text-slate-400">姓名</label>
+                <input
+                  type="text"
+                  value={currentEmp.employeename}
+                  onChange={(e) => setCurrentEmp({ ...currentEmp, employeename: e.target.value })}
+                  className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-500/50 focus:outline-none"
+                />
+              </div>
+
+              <div className="col-span-1 space-y-1.5">
+                <label className="text-xs font-medium text-slate-400">联系电话</label>
+                <input
+                  type="text"
+                  value={currentEmp.p_emp_phone}
+                  onChange={(e) => setCurrentEmp({ ...currentEmp, p_emp_phone: e.target.value })}
+                  className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-500/50 focus:outline-none"
+                />
+              </div>
+
+              <div className="col-span-1 space-y-1.5">
+                <label className="text-xs font-medium text-slate-400">性别</label>
+                <div className="flex gap-4 pt-1">
+                  {['男', '女'].map((g) => (
+                    <label
+                      key={g}
+                      className="flex items-center gap-2 cursor-pointer bg-black/20 px-3 py-1.5 rounded-lg border border-white/5 hover:bg-white/5"
+                    >
+                      <input
+                        type="radio"
+                        className="accent-indigo-500"
+                        checked={currentEmp.P_emp_sex === g}
+                        onChange={() => setCurrentEmp({ ...currentEmp, P_emp_sex: g })}
+                      />
+                      <span className="text-sm text-slate-300">{g}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="col-span-1 space-y-1.5">
+                <label className="text-xs font-medium text-slate-400">部门</label>
+                <CustomSelect
+                  value={currentEmp.Departmentid}
+                  onChange={(val: any) => setCurrentEmp({ ...currentEmp, Departmentid: val })}
+                  options={editDeptOptions}
+                  placeholder="选择部门"
+                  className="w-full"
+                />
+              </div>
+
+              <div className="col-span-1 space-y-1.5">
+                <label className="text-xs font-medium text-slate-400">员工状态</label>
+                <CustomSelect
+                  value={currentEmp.P_emp_Status}
+                  onChange={(val: any) => setCurrentEmp({ ...currentEmp, P_emp_Status: val })}
+                  options={statusOptions}
+                  placeholder="选择状态"
+                  className="w-full"
+                />
+              </div>
+
+              <div className="col-span-1 space-y-1.5">
+                <label className="text-xs font-medium text-slate-400">学历</label>
+                <input
+                  type="text"
+                  value={currentEmp.p_emp_degree}
+                  onChange={(e) => setCurrentEmp({ ...currentEmp, p_emp_degree: e.target.value })}
+                  className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-500/50 focus:outline-none"
+                  placeholder="本科 / 硕士 / 博士"
+                />
+              </div>
+
+              <div className="col-span-1 space-y-1.5">
+                <label className="text-xs font-medium text-slate-400">入职日期</label>
+                <input
+                  type="date"
+                  value={currentEmp.P_emp_workJoindt ? String(currentEmp.P_emp_workJoindt).split('T')[0] : ''}
+                  onChange={(e) => setCurrentEmp({ ...currentEmp, P_emp_workJoindt: e.target.value })}
+                  className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-500/50 focus:outline-none"
+                />
+              </div>
+
+              <div className="col-span-full space-y-1.5">
+                <label className="text-xs font-medium text-slate-400">备注</label>
+                <textarea
+                  rows={3}
+                  value={currentEmp.remark || ''}
+                  onChange={(e) => setCurrentEmp({ ...currentEmp, remark: e.target.value })}
+                  className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-500/50 focus:outline-none"
+                  placeholder="补充说明，例如证件情况、紧急联系人等"
+                />
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-white/5 bg-white/[0.02] flex items-center justify-end gap-3">
+              <button
+                onClick={() => setIsEditorOpen(false)}
+                className="px-4 py-2 rounded-lg border border-white/10 text-slate-300 hover:bg-white/5 text-sm"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="px-6 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium flex items-center gap-2"
+              >
+                {saving && <Loader2 className="w-4 h-4 animate-spin" />} 保存更改
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 4. Schema Reference Modal */}
+      {isSchemaOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm" onClick={() => setIsSchemaOpen(false)} />
+          <div className="relative w-full max-w-lg bg-[#0F1629] border border-white/10 rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95">
+            <div className="px-6 py-4 border-b border-white/5 bg-white/[0.02] flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-lg bg-blue-500/10 text-blue-400">
+                  <TableProperties size={18} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-white text-base">数据字典 (AI 知识库)</h3>
+                  <p className="text-xs text-slate-400">AI 已自动学习以下字段定义</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsSchemaOpen(false)}
+                className="p-1.5 rounded-full hover:bg-white/10 text-slate-400 hover:text-white"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="max-h-[60vh] overflow-y-auto">
+              {Object.keys(dataSchema).length === 0 ? (
+                <div className="p-8 text-center text-slate-500 text-sm">
+                  <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 opacity-50" />
+                  正在从云端加载数据定义...
+                </div>
+              ) : (
+                <table className="w-full text-left border-collapse">
+                  <thead className="bg-black/20 text-xs text-slate-500 uppercase font-medium">
+                    <tr>
+                      <th className="px-6 py-3 border-b border-white/5">数据库列名</th>
+                      <th className="px-6 py-3 border-b border-white/5">业务含义</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5 text-sm">
+                    {Object.entries(dataSchema).map(([col, desc]) => (
+                      <tr key={col} className="hover:bg-white/[0.02]">
+                        <td className="px-6 py-3 font-mono text-indigo-300">{col}</td>
+                        <td className="px-6 py-3 text-slate-300">{desc}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            <div className="p-4 border-t border-white/5 bg-black/20 text-xs text-slate-500 flex items-center gap-2">
+              <Sparkles size={12} className="text-blue-400" />
+              <span>您可以使用自然语言直接询问这些字段，例如：“分析一下学历分布”。</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 5. Analysis Overlay */}
+      {isAnalysisOpen && (
+        <div className="absolute inset-0 z-50 bg-[#020617] flex flex-col animate-in slide-in-from-bottom-10 duration-500">
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:40px_40px] pointer-events-none"></div>
+          <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#020617]/50 to-[#020617] pointer-events-none"></div>
+
+          {/* Header */}
+          <div className="h-20 px-8 border-b border-white/10 flex items-center justify-between bg-white/[0.01] relative z-10">
+            <div className="flex items-center gap-4">
+              <div className="relative group">
+                <div className="absolute -inset-2 bg-indigo-500/20 rounded-full blur-xl group-hover:bg-indigo-500/40 transition-all"></div>
+                <div className="relative p-3 rounded-xl bg-[#0F1629] border border-indigo-500/30 text-indigo-400 shadow-[0_0_15px_rgba(99,102,241,0.2)]">
+                  <BrainCircuit size={24} className={isAiGenerating ? 'animate-pulse' : ''} />
+                </div>
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
+                  AI 智能决策中枢
+                  <span className="px-2 py-0.5 rounded text-[10px] bg-indigo-500/10 border border-indigo-500/20 text-indigo-300">
+                    QWEN-MAX
+                  </span>
+                </h2>
+                <p className="text-xs text-slate-400 font-mono flex items-center gap-2 mt-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                  {isAiGenerating ? 'PERFORMING DEEP ANALYSIS...' : aiParams?.query || '实时分析会话'}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              {!isAiGenerating && (
+                <button className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-xs text-slate-300 hover:text-white hover:bg-white/10 transition-colors">
+                  <Share2 size={14} /> 导出报表
+                </button>
+              )}
+              <button
+                onClick={() => setIsAnalysisOpen(false)}
+                className="p-3 rounded-full bg-white/5 hover:bg-red-500/10 hover:text-red-400 text-slate-400 transition-all border border-white/5 hover:border-red-500/20"
+              >
+                <X size={20} />
+              </button>
+            </div>
+          </div>
+
+          {/* Content */}
+          <div className="flex-1 overflow-y-auto p-6 md:p-8 relative z-10 custom-scrollbar">
+            {isAiGenerating ? (
+              <div className="h-full flex flex-col items-center md:justify-center justify-start p-4 md:py-8 gap-4">
+                <div className="w-full max-w-4xl md:hidden space-y-3">
+                  <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-indigo-600/30 via-blue-500/20 to-emerald-500/20 border border-white/10 p-4 shadow-[0_15px_40px_-20px_rgba(79,70,229,0.8)]">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="relative">
+                        <div className="absolute inset-0 rounded-full bg-indigo-500/30 blur-lg animate-pulse" />
+                        <div className="relative w-14 h-14 rounded-full border border-white/20 bg-white/5 flex items-center justify-center">
+                          <div className="absolute inset-1 rounded-full border border-indigo-400/30 animate-spin" style={{ animationDuration: '6s' }} />
+                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-400 to-blue-500 shadow-lg shadow-blue-500/30" />
+                        </div>
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-[11px] uppercase tracking-[0.2em] text-indigo-200/80">Real-time Analysis</p>
+                        <p className="text-lg font-bold text-white">引擎已启动 · 极速渲染中</p>
+                      </div>
+                      <span className="px-3 py-1 rounded-full bg-white/10 text-[11px] text-emerald-200 border border-white/10 flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                        LIVE
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="rounded-xl bg-black/20 border border-white/10 p-3">
+                        <p className="text-[11px] text-slate-400 mb-1">摄入进度</p>
+                        <div className="text-xl font-bold text-white flex items-baseline gap-1">
+                          {processedCount.toString().padStart(4, '0')}
+                          <span className="text-[12px] text-slate-400">/ {employees.length || 150}</span>
+                        </div>
+                        <div className="mt-2 h-1.5 bg-white/5 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-indigo-400 via-blue-400 to-emerald-400 shadow-[0_0_12px_rgba(59,130,246,0.6)]"
+                            style={{ width: `${Math.min(100, (processedCount / (employees.length || 150)) * 100)}%` }}
+                          />
+                        </div>
+                      </div>
+                      <div className="rounded-xl bg-black/20 border border-white/10 p-3 flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center">
+                          <Activity className="text-emerald-300 animate-pulse" size={18} />
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-[11px] text-slate-400">状态</p>
+                          <p className="text-sm font-semibold text-white">量子内核执行 · 不需下滑即可预览</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-8">
+                  {/* Left: Terminal Log */}
+                  <div className="col-span-1 bg-black/80 border border-emerald-500/30 rounded-xl shadow-[0_0_50px_rgba(16,185,129,0.05)] overflow-hidden font-mono text-xs relative h-[18rem] md:h-96 flex flex-col group">
+                    <div className="absolute top-0 inset-x-0 h-[1px] bg-emerald-500/50 shadow-[0_0_10px_#10b981]"></div>
+                    <div className="bg-emerald-950/30 px-4 py-3 border-b border-emerald-500/20 flex items-center justify-between">
+                      <span className="text-emerald-400 flex items-center gap-2 font-bold tracking-wider">
+                        <Terminal size={14} /> SYSTEM_KERNEL_LOG
+                      </span>
+                      <div className="flex gap-1.5">
+                        <div className="w-2 h-2 rounded-full bg-emerald-500/20"></div>
+                        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_#10b981]"></div>
+                      </div>
+                    </div>
+                    <div
+                      ref={logContainerRef}
+                      className="flex-1 overflow-y-auto p-5 text-emerald-500/90 space-y-1.5 custom-scrollbar font-mono leading-relaxed"
+                    >
+                      {terminalLines.map((line, i) => (
+                        <div
+                          key={i}
+                          className="pl-2 border-l-2 border-emerald-500/20 hover:border-emerald-400/80 hover:bg-emerald-500/5 transition-colors"
+                        >
+                          <span className="opacity-40 mr-3 text-[10px]">{new Date().toLocaleTimeString()}</span>
+                          {line}
+                        </div>
+                      ))}
+                      <div className="animate-pulse text-emerald-400 pl-2">_</div>
+                    </div>
+                    <div className="absolute inset-0 pointer-events-none bg-gradient-to-b from-transparent via-emerald-500/5 to-transparent animate-[scan_3s_linear_infinite] opacity-50"></div>
+                  </div>
+
+                  {/* Right: Data Ingestion & Code Stream */}
+                  <div className="col-span-1 space-y-6">
+                    <div className="bg-[#0F1629]/50 border border-blue-500/30 rounded-xl p-6 relative overflow-hidden backdrop-blur-md">
+                      <div className="flex justify-between items-end mb-4 relative z-10">
+                        <div className="flex flex-col">
+                          <span className="text-blue-400 font-mono text-xs mb-1 flex items-center gap-2">
+                            <Database size={12} /> DATA_INGESTION_RATE
+                          </span>
+                          <span className="text-white font-bold text-3xl font-mono tracking-tighter">
+                            {processedCount.toString().padStart(4, '0')}{' '}
+                            <span className="text-sm text-slate-500 font-normal">/ {employees.length || 150} rows</span>
+                          </span>
+                        </div>
+                        <Activity className="text-blue-500 animate-pulse" />
+                      </div>
+                      <div className="w-full bg-blue-950/50 h-1.5 rounded-full overflow-hidden relative z-10">
+                        <div
+                          className="h-full bg-blue-500 shadow-[0_0_15px_#3b82f6]"
+                          style={{ width: `${Math.min(100, (processedCount / (employees.length || 150)) * 100)}%` }}
+                        ></div>
+                      </div>
+                      <div className="absolute -right-10 -bottom-10 w-32 h-32 bg-blue-500/20 blur-[50px] rounded-full"></div>
+                    </div>
+
+                    <div className="bg-[#050505] border border-white/10 rounded-xl flex-1 h-60 flex flex-col overflow-hidden relative shadow-inner">
+                      <div className="px-4 py-2 border-b border-white/5 bg-white/5 flex items-center justify-between">
+                        <span className="text-[10px] text-slate-400 flex items-center gap-2 uppercase tracking-wider">
+                          <Code2 size={12} /> Live_Payload_Stream
+                        </span>
+                        <Lock size={10} className="text-indigo-500" />
+                      </div>
+                      <div
+                        ref={codeContainerRef}
+                        className="flex-1 p-4 overflow-y-auto font-mono text-[11px] text-indigo-300/90 leading-relaxed opacity-90"
+                      >
+                        <pre className="whitespace-pre-wrap break-all">
+                          {codeStream || <span className="animate-pulse text-slate-600">Waiting for stream...</span>}
+                          <span className="inline-block w-2 h-4 bg-indigo-500 ml-1 animate-pulse align-middle"></span>
+                        </pre>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : aiReportConfig ? (
+              <div className="max-w-7xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-8 duration-700">
+                {/* SMART ACTIONS BAR */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                  <div className="lg:col-span-2 p-4 rounded-2xl bg-white/5 border border-white/10 flex flex-wrap items-center gap-3">
+                    <div className="flex items-center gap-2 text-xs font-bold text-indigo-200">
+                      <Sparkles size={14} /> 智能问法推荐
+                    </div>
+                    {smartQueryPresets.map((preset) => (
+                      <button
+                        key={preset.label}
+                        onClick={() => runPresetAnalysis(preset.query)}
+                        className="px-3 py-1.5 rounded-full bg-indigo-500/10 text-indigo-100 border border-indigo-500/30 text-[11px] hover:bg-indigo-500/20 transition-colors"
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="p-4 rounded-2xl bg-white/5 border border-white/10 flex items-center gap-3">
+                    <Radar className="text-emerald-400" size={18} />
+                    <div className="text-xs text-slate-300 leading-relaxed">
+                      实时调优：点击推荐问法可快速生成深度分析，结合数据字典自动匹配字段，提升“智能感”。
+                    </div>
+                  </div>
+                </div>
+
+                <form
+                  onSubmit={submitFollowQuery}
+                  className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 p-4 rounded-2xl bg-white/5 border border-white/10"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-300">
+                      <BrainCircuit size={16} />
+                    </div>
+                    <div className="flex-1">
+                      <input
+                        type="text"
+                        value={followQuery}
+                        onChange={(e) => setFollowQuery(e.target.value)}
+                        placeholder="提问示例：统计近三年的入职趋势并给出补给建议"
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/60"
+                      />
+                      <p className="text-[11px] text-slate-500 mt-1">结合数据字典，AI 会自动匹配字段并生成多图表。</p>
+                    </div>
+                  </div>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-500 to-blue-500 text-white text-sm font-semibold flex items-center gap-2 shadow-lg shadow-indigo-500/20"
+                  >
+                    <Sparkles size={14} /> 生成分析
+                  </button>
+                </form>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                  {aiReportConfig.charts
+                    .filter((c) => c.type === 'stat')
+                    .map((chart, idx) => {
+                      const val = getAggregatedData(chart) as number;
+                      return (
+                        <div
+                          key={chart.id}
+                          className="p-4 rounded-2xl bg-gradient-to-br from-indigo-900/40 via-indigo-900/10 to-slate-900/40 border border-white/10 relative overflow-hidden"
+                          style={{ animationDelay: `${idx * 120}ms` }}
+                        >
+                          <div className="absolute -inset-0.5 bg-gradient-to-r from-indigo-500/10 via-transparent to-emerald-500/10 blur-2xl"></div>
+                          <div className="relative flex items-center justify-between">
+                            <div>
+                              <p className="text-[11px] text-slate-400 uppercase">{chart.title}</p>
+                              <p className="text-2xl font-bold text-white mt-1">{val}</p>
+                              <p className="text-[11px] text-indigo-200/80 mt-1">{chart.insight || '动态指标'}</p>
+                            </div>
+                            <div className="w-10 h-10 rounded-full bg-indigo-500/20 border border-indigo-500/40 flex items-center justify-center text-indigo-200">
+                              <BarChart3 size={18} />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-6 rounded-3xl bg-[#0F1629]/60 backdrop-blur-xl border border-white/5 relative overflow-hidden">
+                      <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 via-transparent to-indigo-500/5" />
+                      <div className="flex items-center justify-between mb-4 relative z-10">
+                        <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                          <LineChart size={16} /> 趋势预测 (Trend)
+                        </h4>
+                        <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded-full border border-emerald-500/20">
+                          AI 预测
+                        </span>
+                      </div>
+
+                      <div className="h-32 flex items-end gap-1 mb-4 relative z-10">
+                        {recruitmentTrend.length > 0 ? (
+                          recruitmentTrend.map((t) => {
+                            const max = Math.max(...recruitmentTrend.map((x) => x.count));
+                            const h = (t.count / max) * 100;
+                            return (
+                              <div
+                                key={t.year}
+                                className="flex-1 flex flex-col items-center justify-end group/bar gap-2"
+                                style={{ height: '100%' }}
+                              >
+                                <div
+                                  className="w-full bg-gradient-to-t from-emerald-500/20 to-emerald-500/80 rounded-t-sm relative transition-all duration-500"
+                                  style={{ height: `${h}%` }}
+                                >
+                                  <div className="absolute top-0 w-full h-[2px] bg-emerald-400 shadow-[0_0_10px_#34d399]"></div>
+                                </div>
+                                <span className="text-[10px] text-slate-500">{t.year}</span>
+                              </div>
+                            );
+                          })
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-slate-500 text-xs">
+                            暂无趋势数据
+                          </div>
+                        )}
+                      </div>
+
+                      <p className="text-xs text-slate-300 leading-relaxed border-t border-white/5 pt-3 relative z-10">
+                        {aiReportConfig.prediction || 'AI 模型分析显示，下季度各部门人才密度将呈现稳步上升趋势。'}
+                      </p>
+                    </div>
+
+                    <div className="p-6 rounded-3xl bg-[#0F1629]/60 backdrop-blur-xl border border-white/5 relative">
+                      <h4 className="text-sm font-bold text-white flex items-center gap-2 mb-4">
+                        <ShieldAlert size={16} className="text-amber-500" /> 风险预警 (Risks)
+                      </h4>
+                      <div className="space-y-3">
+                        {aiReportConfig.risks?.slice(0, 3).map((risk, i) => (
+                          <div
+                            key={i}
+                            className="flex gap-3 items-start p-3 rounded-xl bg-amber-500/5 border border-amber-500/10 hover:bg-amber-500/10 transition-colors"
+                          >
+                            <AlertTriangle size={16} className="text-amber-500 shrink-0 mt-0.5" />
+                            <div>
+                              <div className="text-xs font-bold text-amber-200">{risk.title}</div>
+                              <div className="text-[10px] text-amber-500/80 mt-1">{risk.desc}</div>
+                            </div>
+                          </div>
+                        )) || <div className="text-xs text-slate-500">暂无高风险项</div>}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* COL 2 */}
+                  <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {aiReportConfig.charts
+                      .filter((c) => c.type !== 'stat')
+                      .slice(0, 4)
+                      .map((chart, idx) => {
+                        const data = getAggregatedData(chart) as { name: string; value: number }[];
+                        const total = data.reduce((acc, curr) => acc + curr.value, 0);
+
+                        return (
+                          <div
+                            key={chart.id}
+                            style={{ animationDelay: `${idx * 150}ms` }}
+                            className="bg-[#1E293B]/40 backdrop-blur-md p-6 rounded-3xl border border-white/5 flex flex-col animate-in zoom-in-95 relative overflow-hidden group"
+                          >
+                            <div className="absolute -inset-px bg-gradient-to-r from-transparent via-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
+
+                            <div className="relative z-10 mb-6 flex items-center justify-between">
+                              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                                {chart.type === 'pie' ? (
+                                  <PieChart size={16} className="text-purple-400" />
+                                ) : (
+                                  <BarChart3 size={16} className="text-blue-400" />
+                                )}
+                                {chart.title}
+                              </h3>
+                            </div>
+
+                            <div className="relative z-10 flex-1 flex flex-col items-center justify-center">
+                              {chart.type === 'pie' ? (
+                                <div className="flex items-center gap-6 w-full justify-center">
+                                  <div className="relative w-32 h-32 shrink-0">
+                                    <div
+                                      className="w-full h-full rounded-full animate-[spin_3s_ease-out]"
+                                      style={{
+                                        background: `conic-gradient(
+                                          ${data
+                                            .map((d, i) => {
+                                              const start =
+                                                (data.slice(0, i).reduce((acc, cur) => acc + cur.value, 0) / total) *
+                                                100;
+                                              const end = start + (d.value / total) * 100;
+                                              const color = CHART_COLORS[i % CHART_COLORS.length];
+                                              return `${color} ${start}% ${end}%`;
+                                            })
+                                            .join(', ')}
+                                        )`,
+                                        mask: 'radial-gradient(transparent 58%, black 59%)',
+                                        WebkitMask: 'radial-gradient(transparent 58%, black 59%)',
+                                      }}
+                                    ></div>
+                                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                                      <span className="text-lg font-bold text-white">{total}</span>
+                                    </div>
+                                  </div>
+                                  <div className="flex-1 grid grid-cols-1 gap-2 text-xs">
+                                    {data.map((d, i) => (
+                                      <div key={d.name} className="flex items-center gap-2">
+                                        <span
+                                          className="w-2 h-2 rounded-full"
+                                          style={{ background: CHART_COLORS[i % CHART_COLORS.length] }}
+                                        ></span>
+                                        <span className="text-slate-200">{d.name}</span>
+                                        <span className="text-slate-400 ml-auto">{d.value}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="w-full h-48 flex items-end gap-3">
+                                  {data.map((d, i) => {
+                                    const h = (d.value / (Math.max(...data.map((x) => x.value)) || 1)) * 100;
+                                    return (
+                                      <div key={d.name} className="flex-1 flex flex-col items-center gap-2 group/bar">
+                                        <div
+                                          className="w-full rounded-t-lg bg-gradient-to-t from-blue-500/20 to-blue-500/80 relative transition-all duration-500"
+                                          style={{ height: `${h}%` }}
+                                        >
+                                          <div className="absolute top-0 inset-x-0 h-0.5 bg-blue-300"></div>
+                                        </div>
+                                        <span className="text-[10px] text-slate-500 group-hover:text-slate-200 transition-colors text-center leading-tight">
+                                          {d.name}
+                                        </span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="h-full flex items-center justify-center text-slate-500 text-sm">
+                <div className="text-center space-y-2">
+                  <Loader2 className="w-5 h-5 animate-spin mx-auto" />
+                  <div>正在准备智能驾驶舱...</div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  );
+
+  const renderMobileView = () => (
+    <div className="min-h-screen w-full bg-[#0B1222] text-white">
+      <div className="sticky top-0 z-10 flex items-center justify-between px-3 py-3 border-b border-white/10 bg-[#0B1222]/95 backdrop-blur-sm">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onBack}
+            className="p-2 rounded-lg bg-white/5 border border-white/10 text-slate-300 active:scale-95"
+          >
+            <ArrowLeft size={18} />
+          </button>
+          <div>
+            <p className="text-[10px] uppercase text-indigo-200/70 font-semibold tracking-[0.2em]">HR FILES</p>
+            <h1 className="text-lg font-bold leading-tight">员工档案</h1>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => loadData()}
+            className="p-2 rounded-lg bg-white/5 border border-white/10 text-slate-300 active:scale-95"
+          >
+            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+          </button>
+          <button
+            onClick={() => openAnalysisCockpit()}
+            className="px-3 py-2 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 text-xs font-semibold shadow-lg shadow-indigo-500/20 border border-white/10"
+          >
+            AI 驾驶舱
+          </button>
+        </div>
+      </div>
+
+      <div className="p-3 space-y-3">
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-3 space-y-3 shadow-inner">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm font-semibold">员工管理中心</div>
+              <p className="text-xs text-slate-400">按条件筛选后查看列表</p>
+            </div>
+            <span className="px-2 py-1 rounded-full bg-white/10 text-[11px] text-slate-200 border border-white/10">
+              {filteredData.length} 条
+            </span>
+          </div>
+
+          <div className="space-y-2">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+              <input
+                type="text"
+                placeholder="搜索姓名或工号"
+                value={keyword}
+                onChange={(e) => setKeyword(e.target.value)}
+                className="w-full bg-black/20 border border-white/10 rounded-xl pl-9 pr-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500/50"
+              />
+            </div>
+            <CustomSelect
+              icon={Filter}
+              value={selectedDept}
+              onChange={(val: any) => setSelectedDept(val)}
+              options={deptOptions}
+              placeholder="选择部门"
+              className="w-full"
+            />
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-white/10 bg-[#0F1629]/80 overflow-hidden shadow-xl">
+          <div className="px-4 py-3 text-xs font-semibold text-slate-300 border-b border-white/5 bg-white/5 uppercase tracking-wide">
+            员工列表
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[620px] text-left text-[13px]">
+              <thead className="bg-[#0B1222] text-slate-400 text-[11px] border-b border-white/10">
+                <tr>
+                  <th className="px-4 py-3 whitespace-nowrap">姓名</th>
+                  <th className="px-4 py-3 whitespace-nowrap">工号</th>
+                  <th className="px-4 py-3 whitespace-nowrap">部门</th>
+                  <th className="px-4 py-3 whitespace-nowrap">状态</th>
+                  <th className="px-4 py-3 whitespace-nowrap">电话</th>
+                  <th className="px-4 py-3 whitespace-nowrap">入职</th>
+                  <th className="px-4 py-3 text-right whitespace-nowrap">操作</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {loading && employees.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-12 text-center text-slate-500">
+                      <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> 数据同步中...
+                    </td>
+                  </tr>
+                ) : filteredData.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
+                      未找到相关数据
+                    </td>
+                  </tr>
+                ) : (
+                  filteredData.map((row) => {
+                    const isPhoneVisible = visiblePhones.has(row.P_emp_no);
+                    const maskedPhone = row.p_emp_phone
+                      ? row.p_emp_phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2')
+                      : '-';
+
+                    return (
+                      <tr
+                        key={row.P_emp_no}
+                        onClick={() => openEditor(row)}
+                        className="active:bg-white/[0.04] hover:bg-white/[0.03] transition-colors"
+                      >
+                        <td className="px-4 py-3 text-white font-medium whitespace-nowrap">
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-full bg-slate-800 border border-white/10 overflow-hidden flex items-center justify-center text-xs font-bold text-slate-400">
+                              {row.webbmp ? <img src={row.webbmp} className="w-full h-full object-cover" /> : row.employeename?.[0] || 'U'}
+                            </div>
+                            <span>{row.employeename}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-slate-300 font-mono text-[12px] whitespace-nowrap">{row.P_emp_no}</td>
+                        <td className="px-4 py-3 text-slate-300 whitespace-nowrap">{getDeptName(row.Departmentid)}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] border ${getStatusColor(row.P_emp_Status)}`}>
+                            {row.P_emp_Status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-slate-300 font-mono text-[12px] whitespace-nowrap">
+                          <div className="flex items-center gap-2">
+                            {isPhoneVisible ? row.p_emp_phone : maskedPhone}
+                            {row.p_emp_phone && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  togglePhoneVisibility(row.P_emp_no);
+                                }}
+                                className="p-1 text-slate-500 hover:text-white"
+                              >
+                                {isPhoneVisible ? <EyeOff size={12} /> : <Eye size={12} />}
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-slate-300 text-[12px] whitespace-nowrap">
+                          {row.P_emp_workJoindt ? String(row.P_emp_workJoindt).split('T')[0] : '-'}
+                        </td>
+                        <td className="px-4 py-3 text-right whitespace-nowrap">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openEditor(row);
+                            }}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-indigo-200 text-[11px]"
+                          >
+                            <Edit2 size={14} /> 编辑
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {!isAnalysisOpen && (
+          <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2">
+            <div className="hidden sm:block px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-slate-300 shadow-lg shadow-black/30">
+              一键开启员工分析
+            </div>
+            <button
+              onClick={() => openAnalysisCockpit()}
+              className="p-3 rounded-full bg-gradient-to-br from-indigo-600 to-blue-600 shadow-[0_10px_40px_-20px_rgba(59,130,246,0.8)] border border-white/20 active:scale-95"
+            >
+              <BarChart3 size={18} className="text-white" />
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  if (isMobileView) {
+    return (
+      <>
+        {renderMobileView()}
+        {renderOverlays()}
+      </>
+    );
+  }
+
   return (
-    <div className="w-full h-[85vh] max-w-[1600px] mx-auto bg-[#0F1629]/80 backdrop-blur-2xl border border-white/10 rounded-3xl flex flex-col overflow-hidden shadow-[0_30px_80px_-40px_rgba(0,0,0,0.8)] animate-in fade-in zoom-in-95 duration-500 relative">
+    <div className="w-full min-h-[82vh] md:h-[85vh] max-w-[1600px] mx-auto bg-[#0F1629]/80 backdrop-blur-2xl border border-white/10 rounded-3xl flex flex-col overflow-auto md:overflow-hidden shadow-[0_30px_80px_-40px_rgba(0,0,0,0.8)] animate-in fade-in zoom-in-95 duration-500 relative px-3 sm:px-6">
       <div className="absolute inset-0 pointer-events-none">
         <div className="absolute -left-10 -top-16 w-64 h-64 bg-indigo-500/15 blur-3xl" />
         <div className="absolute right-10 top-10 w-80 h-80 bg-emerald-500/10 blur-[120px]" />
@@ -758,7 +1579,7 @@ Return JSON Format:
       </div>
 
       {/* 1. Navbar */}
-      <div className="h-16 px-6 border-b border-white/5 flex items-center justify-between shrink-0 bg-white/[0.04] backdrop-blur-xl relative z-10">
+      <div className="h-auto min-h-[64px] px-2 sm:px-6 py-2 border-b border-white/5 flex items-center justify-between shrink-0 bg-white/[0.04] backdrop-blur-xl relative z-10 rounded-2xl sm:rounded-none mt-3 sm:mt-0">
         <div className="flex items-center gap-4">
           <button
             onClick={onBack}
@@ -786,20 +1607,14 @@ Return JSON Format:
           </button>
 
           <button
-            onClick={() => {
-              setIsAnalysisOpen(true);
-              if (!aiReportConfig) generateDynamicAnalysis('综合分析', employees, departments, dataSchema, recruitmentTrend);
-            }}
+            onClick={() => openAnalysisCockpit()}
             className="md:hidden flex items-center gap-2 px-3 py-2 rounded-lg bg-gradient-to-r from-blue-600/80 to-indigo-600/80 text-xs font-bold text-white shadow-lg shadow-blue-500/20 transition-all border border-white/10"
           >
             <BarChart3 size={14} /> AI 驾驶舱
           </button>
 
           <button
-            onClick={() => {
-              setIsAnalysisOpen(true);
-              if (!aiReportConfig) generateDynamicAnalysis('综合分析', employees, departments, dataSchema, recruitmentTrend);
-            }}
+            onClick={() => openAnalysisCockpit()}
             className="hidden md:flex items-center gap-2 px-3 py-2 rounded-lg bg-gradient-to-r from-blue-600/80 to-indigo-600/80 hover:from-blue-500 hover:to-indigo-500 text-xs font-bold text-white shadow-lg shadow-blue-500/20 transition-all border border-white/10"
           >
             <BarChart3 size={14} /> 数据驾驶舱
@@ -887,8 +1702,8 @@ Return JSON Format:
         </div>
       </div>
 
-      {/* 2. Table */}
-      <div className="flex-1 overflow-auto custom-scrollbar relative z-10">
+      {/* 2. Table (Desktop) */}
+      <div className="hidden md:block flex-1 overflow-auto custom-scrollbar relative z-10">
         <table className="w-full text-left border-separate border-spacing-0">
           <thead className="sticky top-0 z-20 bg-gradient-to-r from-[#0F1629] via-[#0F1629]/95 to-[#0F1629] text-xs font-bold text-slate-400 uppercase tracking-wider shadow-[0_10px_30px_-20px_rgba(0,0,0,0.8)] backdrop-blur">
             <tr>
@@ -1003,11 +1818,111 @@ Return JSON Format:
         </table>
       </div>
 
+      {/* 2b. Compact table (Mobile) */}
+      <div className="md:hidden px-3 pb-6">
+        <div className="rounded-2xl border border-white/10 bg-white/[0.02] shadow-inner overflow-hidden">
+          <div className="px-4 py-3 text-xs font-semibold text-slate-300 border-b border-white/5 bg-white/[0.03] uppercase tracking-wide">
+            员工列表（轻触行即可编辑）
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[620px] text-left text-[13px]">
+              <thead className="bg-[#0F1629] text-slate-400 text-[11px] border-b border-white/10">
+                <tr>
+                  <th className="px-4 py-3 whitespace-nowrap">姓名</th>
+                  <th className="px-4 py-3 whitespace-nowrap">工号</th>
+                  <th className="px-4 py-3 whitespace-nowrap">部门</th>
+                  <th className="px-4 py-3 whitespace-nowrap">状态</th>
+                  <th className="px-4 py-3 whitespace-nowrap">电话</th>
+                  <th className="px-4 py-3 whitespace-nowrap">入职</th>
+                  <th className="px-4 py-3 text-right whitespace-nowrap">操作</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {loading && employees.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-12 text-center text-slate-500">
+                      <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> 数据同步中...
+                    </td>
+                  </tr>
+                ) : filteredData.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
+                      未找到相关数据
+                    </td>
+                  </tr>
+                ) : (
+                  filteredData.map((row) => {
+                    const isPhoneVisible = visiblePhones.has(row.P_emp_no);
+                    const maskedPhone = row.p_emp_phone
+                      ? row.p_emp_phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2')
+                      : '-';
+
+                    return (
+                      <tr
+                        key={row.P_emp_no}
+                        onClick={() => openEditor(row)}
+                        className="active:bg-white/[0.04] hover:bg-white/[0.03] transition-colors"
+                      >
+                        <td className="px-4 py-3 text-white font-medium whitespace-nowrap">
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-full bg-slate-800 border border-white/10 overflow-hidden flex items-center justify-center text-xs font-bold text-slate-400">
+                              {row.webbmp ? <img src={row.webbmp} className="w-full h-full object-cover" /> : row.employeename?.[0] || 'U'}
+                            </div>
+                            <span>{row.employeename}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-slate-300 font-mono text-[12px] whitespace-nowrap">{row.P_emp_no}</td>
+                        <td className="px-4 py-3 text-slate-300 whitespace-nowrap">{getDeptName(row.Departmentid)}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] border ${getStatusColor(row.P_emp_Status)}`}>
+                            {row.P_emp_Status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-slate-300 font-mono text-[12px] whitespace-nowrap">
+                          <div className="flex items-center gap-2">
+                            {isPhoneVisible ? row.p_emp_phone : maskedPhone}
+                            {row.p_emp_phone && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  togglePhoneVisibility(row.P_emp_no);
+                                }}
+                                className="p-1 text-slate-500 hover:text-white"
+                              >
+                                {isPhoneVisible ? <EyeOff size={12} /> : <Eye size={12} />}
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-slate-300 text-[12px] whitespace-nowrap">
+                          {row.P_emp_workJoindt ? String(row.P_emp_workJoindt).split('T')[0] : '-'}
+                        </td>
+                        <td className="px-4 py-3 text-right whitespace-nowrap">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openEditor(row);
+                            }}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-indigo-200 text-[11px]"
+                          >
+                            <Edit2 size={14} /> 编辑
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
       {/* 3. Editor Modal */}
       {isEditorOpen && currentEmp && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] flex items-start md:items-center justify-center p-3 sm:p-4">
           <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm" onClick={() => setIsEditorOpen(false)} />
-          <div className="relative w-full max-w-2xl bg-[#0F1629] border border-white/10 rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95">
+          <div className="relative w-full max-w-lg md:max-w-2xl bg-[#0F1629] border border-white/10 rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 h-[90vh] md:h-auto flex flex-col">
             <div className="px-6 py-4 border-b border-white/5 bg-white/[0.02] flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-slate-800 border border-white/10 overflow-hidden flex items-center justify-center">
@@ -1030,7 +1945,7 @@ Return JSON Format:
               </button>
             </div>
 
-            <div className="p-6 grid grid-cols-2 gap-x-6 gap-y-5">
+            <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5 overflow-y-auto flex-1">
               <div className="col-span-1 space-y-1.5">
                 <label className="text-xs font-medium text-slate-400">姓名</label>
                 <input
@@ -1772,8 +2687,23 @@ Return JSON Format:
           </div>
         </div>
       )}
+
+      {!isAnalysisOpen && (
+        <div className="fixed bottom-6 right-6 z-40 flex items-center gap-2">
+          <div className="hidden lg:block px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-slate-200 shadow-lg shadow-blue-500/10">
+            员工数据分析入口
+          </div>
+          <button
+            onClick={() => openAnalysisCockpit()}
+            className="p-3 rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 border border-white/20 shadow-[0_10px_45px_-20px_rgba(59,130,246,0.9)] hover:scale-[1.02] transition-transform"
+          >
+            <BarChart3 size={18} className="text-white" />
+          </button>
+        </div>
+      )}
     </div>
   );
+
 };
 
 export default ToolsPlatform;
