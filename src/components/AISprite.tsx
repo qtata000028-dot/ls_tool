@@ -308,13 +308,19 @@ const AISprite: React.FC<AISpriteProps> = ({ onNavigate }) => {
       setIsListening(true);
       isListeningRef.current = true;
       shouldResumeRef.current = true;
-      setVoiceState('listening');
-      showFeedback('监听中');
+
+      if (isWakeWordActiveRef.current) {
+        setVoiceState('awake');
+        showFeedback('待指令');
+      } else {
+        setVoiceState('listening');
+        showFeedback('监听中');
+      }
     };
 
     recognition.onaudiostart = () => {
-      setVoiceState('listening');
-      if (!feedback) showFeedback('等待唤醒');
+      setVoiceState(isWakeWordActiveRef.current ? 'awake' : 'listening');
+      if (!feedback) showFeedback(isWakeWordActiveRef.current ? '待指令' : '等待唤醒');
     };
 
     recognition.onspeechstart = () => {
