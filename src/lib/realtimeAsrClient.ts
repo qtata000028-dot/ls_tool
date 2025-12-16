@@ -52,7 +52,7 @@ export class RealtimeAsrClient {
     this.srcNode = this.ac.createMediaStreamSource(this.stream);
 
     // ScriptProcessor 先用于快速跑通（后续可升级 AudioWorklet）
-    this.proc = this.ac.createScriptProcessor(4096, 1, 1);
+    this.proc = this.ac.createScriptProcessor(1024, 1, 1);
     this.srcNode.connect(this.proc);
 
     // 避免回放啸叫：接一个 0 增益输出
@@ -77,13 +77,23 @@ export class RealtimeAsrClient {
       return out;
     };
 
+    const FRAME_SAMPLES = 320; // 20ms @ 16kHz
+    let cache: number[] = [];
+
     this.proc.onaudioprocess = (ev) => {
       if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
       if (!this.canSend) return;
 
       const input = ev.inputBuffer.getChannelData(0);
       const pcm16 = downsampleTo16kInt16(input, this.ac!.sampleRate);
-      this.ws.send(pcm16.buffer);
+
+      for (let i = 0; i < pcm16.length; i++) cache.push(pcm16[i]);
+
+      while (cache.length >= FRAME_SAMPLES) {
+        const frame = new Int16Array(cache.slice(0, FRAME_SAMPLES));
+        cache = cache.slice(FRAME_SAMPLES);
+        this.ws.send(frame.buffer);
+      }
     };
   }
 

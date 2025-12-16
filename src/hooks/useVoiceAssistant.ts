@@ -187,6 +187,7 @@ const useVoiceAssistant = (options?: VoiceAssistantOptions) => {
       if (msg.type === 'partial') {
         if (msg.text) {
           setTranscript(msg.text.trim());
+          setFeedback('正在识别...');
           if (assistantStateRef.current !== 'awake' && containsAny(msg.text, WAKE_WORDS)) {
             handleAwake();
           }
